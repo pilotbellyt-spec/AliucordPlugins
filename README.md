@@ -41,3 +41,7 @@ plugins/ModernUserStyles/build/outputs/ModernUserStyles.zip
 This plugin targets Aliucord on Discord Android `126021`. It uses Aliucord patching APIs and Discord's existing authenticated REST/Gateway state where available; it does not copy Discord web client code.
 
 WOFF2 decoder native libraries are compiled from the `khoben/woff2-android` submodule during the Gradle build and are only packaged into the generated plugin zip.
+
+## License
+
+ModernUserStyles is licensed under GPLv3. Third-party license notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

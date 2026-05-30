@@ -293,6 +293,7 @@ class ModernUserStyles : Plugin() {
                         roles.forMember(loaded.guildMember),
                         guildId,
                         preserveName,
+                        useDisplayStyleColors = true,
                     )
                 }
             }
@@ -304,6 +305,7 @@ class ModernUserStyles : Plugin() {
                 roles.forMember(loaded.guildMember),
                 guildId,
                 preserveName,
+                useDisplayStyleColors = true,
             )
         }
     }
@@ -630,6 +632,7 @@ class ModernUserStyles : Plugin() {
         guildId: Long? = null,
         preserveExistingNameOnRefresh: Boolean = false,
         fetchAsync: Boolean = true,
+        useDisplayStyleColors: Boolean = false,
     ) {
         if (textView != null && fetchAsync) {
             renderedUserIds[textView] = userId
@@ -644,6 +647,7 @@ class ModernUserStyles : Plugin() {
                         roleGradient,
                         guildId,
                         preserveExistingNameOnRefresh,
+                        useDisplayStyleColors = useDisplayStyleColors,
                     )
                 }
             }
@@ -660,6 +664,7 @@ class ModernUserStyles : Plugin() {
             settings.getBool("displayNames", true),
             settings.getBool("displayNameStyles", true),
             settings.getBool("roleGradients", true),
+            useDisplayStyleColors,
         )
     }
 

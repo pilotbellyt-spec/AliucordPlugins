@@ -1,13 +1,16 @@
 package com.github.pilotbellytspec.modernuserstyles
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Color
-import android.graphics.LinearGradient
-import android.graphics.Shader
 import android.graphics.Typeface
+import android.text.SpannableString
+import android.text.Spanned
 import android.view.View
+import android.view.animation.LinearInterpolator
 import android.widget.TextView
-import androidx.core.graphics.ColorUtils
 import com.github.khoben.woff2android.Woff2Typeface
 import com.discord.utilities.view.text.SimpleDraweeSpanTextView
 import java.util.WeakHashMap
@@ -16,6 +19,8 @@ class NameRenderer(private val context: Context) {
     private val originalTypefaces = WeakHashMap<TextView, Typeface?>()
     private val originalScaleX = WeakHashMap<TextView, Float>()
     private val originalLetterSpacing = WeakHashMap<TextView, Float>()
+    private val runningAnimations = WeakHashMap<TextView, ValueAnimator>()
+    private val animationKeys = WeakHashMap<TextView, String>()
     private val loadedFonts = mutableMapOf<Int, Typeface?>()
     private val resources = PluginZipResources(context)
     private val woff2Typeface by lazy {
@@ -34,14 +39,22 @@ class NameRenderer(private val context: Context) {
         allowDisplayName: Boolean,
         allowNameStyle: Boolean,
         allowRoleGradient: Boolean,
+        allowDisplayStyleColors: Boolean = false,
     ) {
         if (textView == null) return
 
         val nextLabel = label.cleanNameLabel()?.takeIf { allowDisplayName }
             ?: textView.text?.toString().cleanNameLabel()
             ?: return
-        val colors = colorsFor(roleGradient, allowRoleGradient)
         val fontId = if (allowNameStyle) style?.fontId else null
+        val styleColors = colorsForDisplayStyle(style, allowNameStyle && allowDisplayStyleColors)
+        val colors = styleColors.ifEmpty { colorsFor(roleGradient, allowRoleGradient) }
+        val useProfileEffect = styleColors.isNotEmpty() && DisplayNameWebEffect.isProfileEffect(style?.effectId ?: DisplayNameCatalog.Effect.SOLID)
+        val effectId = if (styleColors.isNotEmpty()) {
+            style?.effectId ?: effectForRoleColors(styleColors)
+        } else {
+            effectForRoleColors(colors)
+        }
 
         originalTypefaces.putIfAbsent(textView, textView.typeface)
         originalScaleX.putIfAbsent(textView, textView.textScaleX)
@@ -55,15 +68,27 @@ class NameRenderer(private val context: Context) {
         textView.letterSpacing = DisplayNameCatalog.letterSpacing(fontId, originalLetterSpacing)
         textView.setTextColor(Color.WHITE)
         textView.typeface = exactTypeface(fontId) ?: DisplayNameCatalog.typeface(fontId, originalTypefaces[textView])
-        textView.text = nextLabel
+        if (!useProfileEffect) {
+            textView.text = nextLabel
+        }
+        if (useProfileEffect) {
+            textView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        }
         textView.requestLayout()
         (textView.parent as? View)?.requestLayout()
 
         if (colors.isNotEmpty() && nextLabel.isNotEmpty()) {
-            applyDirectStyle(textView, nextLabel, colors, effectForRoleColors(colors))
-            textView.post {
-                if (textView.text?.toString() == nextLabel) {
-                    applyDirectStyle(textView, nextLabel, colors, effectForRoleColors(colors))
+            if (useProfileEffect) {
+                applyProfileEffect(textView, nextLabel, colors, effectId)
+            } else {
+                stopProfileAnimation(textView)
+                applyDirectStyle(textView, nextLabel, colors, effectId)
+            }
+            if (!useProfileEffect) {
+                textView.post {
+                    if (textView.text?.toString() == nextLabel) {
+                        applyDirectStyle(textView, nextLabel, colors, effectId)
+                    }
                 }
             }
         }
@@ -95,6 +120,16 @@ class NameRenderer(private val context: Context) {
             tertiary != null -> listOf(primary, secondary ?: primary, tertiary)
             secondary != null -> listOf(primary, secondary)
             else -> listOf(primary)
+        }
+    }
+
+    fun colorsForDisplayStyle(
+        style: DisplayStyleData?,
+        allowDisplayStyleColors: Boolean,
+    ): List<Int> {
+        if (!allowDisplayStyleColors || style == null) return emptyList()
+        return style.colors.mapNotNull { color ->
+            color.takeIf { it != 0 }
         }
     }
 
@@ -138,17 +173,7 @@ class NameRenderer(private val context: Context) {
             effectId == DisplayNameCatalog.Effect.TEST_4
 
         if (shouldGradient) {
-            val directColors = DiscordRoleGradient.shaderColors(colors)
-            val width = DiscordRoleGradient.periodPx(textView.resources.displayMetrics.density)
-            textView.paint.shader = LinearGradient(
-                0f,
-                0f,
-                width,
-                0f,
-                directColors,
-                DiscordRoleGradient.positions(directColors.size),
-                Shader.TileMode.REPEAT,
-            )
+                textView.paint.shader = DiscordRoleGradient.roleShader(colors, textView.resources.displayMetrics.density)
         }
 
         when (effectId) {
@@ -170,11 +195,119 @@ class NameRenderer(private val context: Context) {
         textView.invalidate()
     }
 
+    private fun applyProfileEffect(textView: TextView, label: String, colors: List<Int>, effectId: Int) {
+        textView.paint.shader = null
+        textView.paint.clearShadowLayer()
+        textView.paint.isFakeBoldText = false
+
+        val correctedColors = DisplayNameWebEffect.correctedColors(colors, effectId)
+        when (effectId) {
+            DisplayNameCatalog.Effect.SOLID,
+            DisplayNameCatalog.Effect.TEST_1 -> {
+                stopProfileAnimation(textView)
+                textView.text = label
+                textView.setTextColor(correctedColors.firstOrNull() ?: Color.WHITE)
+            }
+            DisplayNameCatalog.Effect.GRADIENT,
+            DisplayNameCatalog.Effect.GLOW,
+            DisplayNameCatalog.Effect.TEST_2,
+            DisplayNameCatalog.Effect.TEST_4 -> {
+                stopProfileAnimation(textView)
+                textView.text = label
+                textView.setTextColor(correctedColors.firstOrNull() ?: Color.WHITE)
+                val width = textView.paint.measureText(label)
+                    .coerceAtLeast(textView.textSize * 2f)
+                val height = textView.lineHeight.toFloat()
+                    .coerceAtLeast(textView.textSize)
+                val gradientColors = correctedColors.takeIf { it.size > 1 }
+                    ?: correctedColors.firstOrNull()?.let { listOf(it, it) }
+                    ?: listOf(Color.WHITE, Color.WHITE)
+                textView.paint.shader = DiscordRoleGradient.profileShader(gradientColors, width, height)
+            }
+            else -> {
+                val key = profileAnimationKey(label, colors, effectId)
+                if (hasDiscordProfileAnimation(effectId) &&
+                    animationKeys[textView] == key &&
+                    currentProfileEffectSpan(textView, label) != null
+                ) {
+                    textView.invalidate()
+                    return
+                }
+
+                textView.setTextColor(Color.WHITE)
+                val styled = SpannableString(label)
+                val span = ProfileEffectSpan(colors, effectId)
+                styled.setSpan(span, 0, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                textView.text = styled
+                maybeAnimateProfileEffect(textView, span, key, effectId)
+            }
+        }
+        textView.invalidate()
+    }
+
+    private fun maybeAnimateProfileEffect(textView: TextView, span: ProfileEffectSpan, key: String, effectId: Int) {
+        if (!hasDiscordProfileAnimation(effectId)) {
+            stopProfileAnimation(textView)
+            return
+        }
+
+        val running = runningAnimations[textView]
+        if (animationKeys[textView] == key && running?.isRunning == true) return
+        animationKeys[textView] = key
+
+        runningAnimations.remove(textView)?.cancel()
+        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 4000L
+            interpolator = LinearInterpolator()
+            addUpdateListener { animation ->
+                span.animationProgress = animation.animatedValue as Float
+                textView.invalidate()
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (runningAnimations[textView] == animation) {
+                        runningAnimations.remove(textView)
+                        animationKeys.remove(textView)
+                    }
+                }
+
+                override fun onAnimationCancel(animation: Animator) {
+                    if (runningAnimations[textView] == animation) {
+                        runningAnimations.remove(textView)
+                    }
+                }
+            })
+        }
+        runningAnimations[textView] = animator
+        animator.start()
+    }
+
+    private fun hasDiscordProfileAnimation(effectId: Int): Boolean =
+        effectId == DisplayNameCatalog.Effect.NEON ||
+            effectId == DisplayNameCatalog.Effect.TOON ||
+            effectId == DisplayNameCatalog.Effect.POP
+
+    private fun stopProfileAnimation(textView: TextView) {
+        runningAnimations.remove(textView)?.cancel()
+        animationKeys.remove(textView)
+    }
+
+    private fun profileAnimationKey(label: String, colors: List<Int>, effectId: Int): String =
+        "$label:$effectId:${colors.joinToString(",")}"
+
+    private fun currentProfileEffectSpan(textView: TextView, label: String): ProfileEffectSpan? {
+        val text = textView.text
+        if (text.toString() != label) return null
+        return (text as? Spanned)
+            ?.getSpans(0, text.length, ProfileEffectSpan::class.java)
+            ?.firstOrNull()
+    }
+
     private fun brighten(color: Int, amount: Float): Int =
-        ColorUtils.blendARGB(color, Color.WHITE, amount)
+        androidx.core.graphics.ColorUtils.blendARGB(color, Color.WHITE, amount)
 
     private fun darken(color: Int, amount: Float): Int =
-        ColorUtils.blendARGB(color, Color.BLACK, amount)
+        androidx.core.graphics.ColorUtils.blendARGB(color, Color.BLACK, amount)
 
     private fun String?.cleanNameLabel(): String? =
         this?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }

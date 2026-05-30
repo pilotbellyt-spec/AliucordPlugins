@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.18"
+version = "0.0.24"
 description = "Backport of gradient user roles & custom display names features from DiscordRN"
 
 dependencies {
@@ -271,6 +271,24 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.24
+        * Fix profile effect animations being wiped by follow-up renders.
+
+        # 0.0.23
+        * Restore Discord web's separate horizontal role-gradient shader for chat and limit profile animations to exact animated effects.
+
+        # 0.0.22
+        * Fix toon profile names to match Discord web's larger candy-fill gradient and add short profile effect animations.
+
+        # 0.0.21
+        * Fix customized profile display names collapsing to ellipses.
+
+        # 0.0.20
+        * Match Discord web gradient direction, color contrast, strokes, and layered profile name effects more closely.
+
+        # 0.0.19
+        * Show custom display-name colors and effects on profiles while keeping chat and member-list names role-colored.
+
         # 0.0.18
         * Apply reply name styles before Discord calculates reply preview spacing.
 

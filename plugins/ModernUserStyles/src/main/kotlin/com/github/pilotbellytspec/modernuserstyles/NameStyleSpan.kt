@@ -1,8 +1,6 @@
 package com.github.pilotbellytspec.modernuserstyles
 
 import android.graphics.Color
-import android.graphics.LinearGradient
-import android.graphics.Shader
 import android.text.TextPaint
 import android.text.style.CharacterStyle
 import android.text.style.UpdateAppearance
@@ -46,19 +44,8 @@ class NameStyleSpan(
     }
 
     private fun applyGradient(tp: TextPaint, source: IntArray) {
-        val gradientColors = DiscordRoleGradient.shaderColors(source.toList())
-
         val density = tp.density.takeIf { it > 0f } ?: Resources.getSystem().displayMetrics.density
-        val width = DiscordRoleGradient.periodPx(density)
-        tp.shader = LinearGradient(
-            0f,
-            0f,
-            width,
-            0f,
-            gradientColors,
-            DiscordRoleGradient.positions(gradientColors.size),
-            Shader.TileMode.REPEAT,
-        )
+        tp.shader = DiscordRoleGradient.roleShader(source.toList(), density)
     }
 
     private fun brighten(color: Int, amount: Float): Int =

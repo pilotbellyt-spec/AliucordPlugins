@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.view.View
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
 import com.github.khoben.woff2android.Woff2Typeface
@@ -36,7 +37,9 @@ class NameRenderer(private val context: Context) {
     ) {
         if (textView == null) return
 
-        val nextLabel = label?.takeIf { allowDisplayName && it.trim().isNotEmpty() } ?: textView.text?.toString() ?: return
+        val nextLabel = label.cleanNameLabel()?.takeIf { allowDisplayName }
+            ?: textView.text?.toString().cleanNameLabel()
+            ?: return
         val colors = colorsFor(roleGradient, allowRoleGradient)
         val fontId = if (allowNameStyle) style?.fontId else null
 
@@ -53,6 +56,8 @@ class NameRenderer(private val context: Context) {
         textView.setTextColor(Color.WHITE)
         textView.typeface = exactTypeface(fontId) ?: DisplayNameCatalog.typeface(fontId, originalTypefaces[textView])
         textView.text = nextLabel
+        textView.requestLayout()
+        (textView.parent as? View)?.requestLayout()
 
         if (colors.isNotEmpty() && nextLabel.isNotEmpty()) {
             applyDirectStyle(textView, nextLabel, colors, effectForRoleColors(colors))
@@ -82,11 +87,27 @@ class NameRenderer(private val context: Context) {
     ): List<Int> {
         if (!allowRoleGradient || roleGradient == null) return emptyList()
 
-        return listOfNotNull(
-            roleGradient.primaryColor,
-            roleGradient.secondaryColor,
-            roleGradient.tertiaryColor,
-        ).distinct()
+        val primary = roleGradient.primaryColor.takeIf { it != 0 } ?: return emptyList()
+        val secondary = roleGradient.secondaryColor?.takeIf { it != 0 }
+        val tertiary = roleGradient.tertiaryColor?.takeIf { it != 0 }
+
+        return when {
+            tertiary != null -> listOf(primary, secondary ?: primary, tertiary)
+            secondary != null -> listOf(primary, secondary)
+            else -> listOf(primary)
+        }
+    }
+
+    fun renderReplyTextView(
+        textView: TextView?,
+        label: String?,
+        style: DisplayStyleData?,
+        roleGradient: RoleGradient?,
+        allowDisplayName: Boolean,
+        allowNameStyle: Boolean,
+        allowRoleGradient: Boolean,
+    ) {
+        renderTextView(textView, label, style, roleGradient, allowDisplayName, allowNameStyle, allowRoleGradient)
     }
 
     fun effectForRoleColors(colors: List<Int>): Int =
@@ -104,34 +125,29 @@ class NameRenderer(private val context: Context) {
     }
 
     private fun applyDirectStyle(textView: TextView, label: String, colors: List<Int>, effectId: Int) {
-        val main = enhance((colors.firstOrNull() ?: 0xffffff) or Color.BLACK)
-        val gradientColors = colors.map { enhance(it or Color.BLACK) }.distinct()
+        val main = DiscordRoleGradient.opaque(colors.firstOrNull() ?: 0xffffff)
 
         textView.paint.shader = null
         textView.paint.clearShadowLayer()
         textView.paint.isFakeBoldText = false
         textView.setTextColor(main)
 
-        val shouldGradient = gradientColors.size > 1 ||
+        val shouldGradient = colors.size > 1 ||
             effectId == DisplayNameCatalog.Effect.GRADIENT ||
-            effectId == DisplayNameCatalog.Effect.GLOW ||
             effectId == DisplayNameCatalog.Effect.TEST_2 ||
             effectId == DisplayNameCatalog.Effect.TEST_4
 
         if (shouldGradient) {
-            val directColors = when {
-                gradientColors.size > 1 -> spreadStops(gradientColors)
-                else -> listOf(main, brighten(main, 0.45f))
-            }
-            val width = textView.paint.measureText(label).coerceAtLeast(textView.textSize * 2f)
+            val directColors = DiscordRoleGradient.shaderColors(colors)
+            val width = DiscordRoleGradient.periodPx(textView.resources.displayMetrics.density)
             textView.paint.shader = LinearGradient(
                 0f,
                 0f,
                 width,
                 0f,
-                directColors.toIntArray(),
-                positionsFor(directColors.size),
-                Shader.TileMode.CLAMP,
+                directColors,
+                DiscordRoleGradient.positions(directColors.size),
+                Shader.TileMode.REPEAT,
             )
         }
 
@@ -154,47 +170,12 @@ class NameRenderer(private val context: Context) {
         textView.invalidate()
     }
 
-    private fun spreadStops(source: List<Int>): List<Int> {
-        if (source.size == 2) {
-            return listOf(
-                brighten(source[0], 0.22f),
-                source[0],
-                source[1],
-                brighten(source[1], 0.28f),
-            )
-        }
-
-        val result = mutableListOf<Int>()
-        source.forEachIndexed { index, color ->
-            result.add(if (index % 2 == 0) brighten(color, 0.16f) else darken(color, 0.16f))
-            result.add(color)
-        }
-        return result
-    }
-
-    private fun positionsFor(size: Int): FloatArray? {
-        if (size <= 1) return null
-        val positions = FloatArray(size)
-        var index = 0
-        while (index < size) {
-            positions[index] = index.toFloat() / (size - 1).toFloat()
-            index++
-        }
-        return positions
-    }
-
-    private fun enhance(color: Int): Int {
-        val luminance = ColorUtils.calculateLuminance(color)
-        return when {
-            luminance < 0.18 -> brighten(color, 0.28f)
-            luminance > 0.82 -> darken(color, 0.16f)
-            else -> color
-        }
-    }
-
     private fun brighten(color: Int, amount: Float): Int =
         ColorUtils.blendARGB(color, Color.WHITE, amount)
 
     private fun darken(color: Int, amount: Float): Int =
         ColorUtils.blendARGB(color, Color.BLACK, amount)
+
+    private fun String?.cleanNameLabel(): String? =
+        this?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
 }

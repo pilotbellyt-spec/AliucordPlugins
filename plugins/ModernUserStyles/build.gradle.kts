@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.15"
+version = "0.0.18"
 description = "Backport of gradient user roles & custom display names features from DiscordRN"
 
 dependencies {
@@ -55,6 +55,7 @@ fun pythonCommand(): String {
 }
 
 fun runCommand(workingDir: File, command: List<String>) {
+    println(command.joinToString(" "))
     val exitCode = ProcessBuilder(command)
         .directory(workingDir)
         .inheritIO()
@@ -80,6 +81,7 @@ val buildWoff2DecoderFromSource = tasks.register("buildWoff2DecoderFromSource") 
         val ndkVersion = androidSdkPackageVersion(sdkDir, "ndk", "MODERN_USER_STYLES_NDK_VERSION")
         val cmakeVersion = androidSdkPackageVersion(sdkDir, "cmake", "MODERN_USER_STYLES_CMAKE_VERSION")
         val cmake = sdkDir.resolve("cmake/$cmakeVersion/bin/${executableName("cmake")}")
+        val ninja = sdkDir.resolve("cmake/$cmakeVersion/bin/${executableName("ninja")}")
         val ndkRoot = sdkDir.resolve("ndk/$ndkVersion")
         val nativeOut = outputDir.get().asFile
 
@@ -97,10 +99,103 @@ val buildWoff2DecoderFromSource = tasks.register("buildWoff2DecoderFromSource") 
         delete(nativeOut)
         nativeOut.mkdirs()
 
-        runCommand(sourceDir, listOf(pythonCommand(), "scripts/build_ndk.py"))
-
         val cppDir = sourceDir.resolve("libwoff2dec/src/main/cpp")
+        val thirdPartyDir = cppDir.resolve("thirdparty")
+        val sourcesDir = sourceDir.resolve("scripts/sources")
+        val woff2Sources = sourcesDir.resolve("woff2")
+        val installDir = sourcesDir.resolve("install")
+        val cpuCount = Runtime.getRuntime().availableProcessors().coerceAtMost(4).coerceAtLeast(1).toString()
+
+        if (!woff2Sources.exists()) {
+            sourcesDir.mkdirs()
+            runCommand(
+                sourcesDir,
+                listOf(
+                    "git",
+                    "clone",
+                    "--single-branch",
+                    "--branch",
+                    "v1.0.2",
+                    "--recursive",
+                    "https://github.com/google/woff2.git",
+                ),
+            )
+        }
+
         listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64").forEach { abi ->
+            println("Building WOFF2 decoder dependencies for $abi")
+            val brotliSourceDir = woff2Sources.resolve("brotli")
+            val brotliBuildDir = brotliSourceDir.resolve("out/$abi")
+            if (!brotliBuildDir.resolve("libbrotlicommon-static.a").exists() || !brotliBuildDir.resolve("libbrotlidec-static.a").exists()) {
+                runCommand(
+                    projectDir,
+                    listOf(
+                        cmake.absolutePath,
+                        "-S", brotliSourceDir.absolutePath,
+                        "-B", brotliBuildDir.absolutePath,
+                        "-DCMAKE_BUILD_TYPE=Release",
+                        "-DCMAKE_TOOLCHAIN_FILE=${ndkRoot.resolve("build/cmake/android.toolchain.cmake").invariantSeparatorsPath}",
+                        "-DCMAKE_MAKE_PROGRAM=${ninja.invariantSeparatorsPath}",
+                        "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                        "-DANDROID_ABI=$abi",
+                        "-DANDROID_NATIVE_API_LEVEL=21",
+                        "-G", "Ninja",
+                    ),
+                )
+                runCommand(projectDir, listOf(cmake.absolutePath, "--build", brotliBuildDir.absolutePath, "--config", "Release", "-j", cpuCount))
+            }
+
+            val woff2BuildDir = woff2Sources.resolve("out/$abi")
+            if (!woff2BuildDir.resolve("libwoff2common.a").exists() || !woff2BuildDir.resolve("libwoff2dec.a").exists()) {
+                runCommand(
+                    projectDir,
+                    listOf(
+                        cmake.absolutePath,
+                        "-S", woff2Sources.absolutePath,
+                        "-B", woff2BuildDir.absolutePath,
+                        "-DBUILD_SHARED_LIBS=OFF",
+                        "-DCMAKE_BUILD_TYPE=Release",
+                        "-DBROTLIDEC_INCLUDE_DIRS=${brotliSourceDir.resolve("c/include").invariantSeparatorsPath}",
+                        "-DBROTLIDEC_LIBRARIES=${brotliBuildDir.resolve("libbrotlidec.so").invariantSeparatorsPath}",
+                        "-DBROTLIENC_INCLUDE_DIRS=${brotliSourceDir.resolve("c/include").invariantSeparatorsPath}",
+                        "-DBROTLIENC_LIBRARIES=${brotliBuildDir.resolve("libbrotlienc.so").invariantSeparatorsPath}",
+                        "-DCMAKE_TOOLCHAIN_FILE=${ndkRoot.resolve("build/cmake/android.toolchain.cmake").invariantSeparatorsPath}",
+                        "-DCMAKE_MAKE_PROGRAM=${ninja.invariantSeparatorsPath}",
+                        "-DANDROID_ABI=$abi",
+                        "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                        "-DANDROID_NATIVE_API_LEVEL=21",
+                        "-G", "Ninja",
+                    ),
+                )
+                runCommand(projectDir, listOf(cmake.absolutePath, "--build", woff2BuildDir.absolutePath, "--config", "Release", "--target", "woff2common", "-j", cpuCount))
+                runCommand(projectDir, listOf(cmake.absolutePath, "--build", woff2BuildDir.absolutePath, "--config", "Release", "--target", "woff2dec", "-j", cpuCount))
+            }
+
+            copy {
+                from(brotliSourceDir.resolve("c/include"))
+                into(thirdPartyDir.resolve("brotli/$abi/include"))
+                include("**/*.h")
+            }
+            copy {
+                from(
+                    brotliBuildDir.resolve("libbrotlicommon-static.a"),
+                    brotliBuildDir.resolve("libbrotlidec-static.a"),
+                )
+                into(thirdPartyDir.resolve("brotli/$abi/lib"))
+            }
+            copy {
+                from(woff2Sources.resolve("include"))
+                into(thirdPartyDir.resolve("woff2/$abi/include"))
+                include("**/*.h")
+            }
+            copy {
+                from(
+                    woff2BuildDir.resolve("libwoff2common.a"),
+                    woff2BuildDir.resolve("libwoff2dec.a"),
+                )
+                into(thirdPartyDir.resolve("woff2/$abi/lib"))
+            }
+
             val abiBuildDir = layout.buildDirectory.dir("woff2decoder_cmake/$abi").get().asFile
             val abiOutDir = nativeOut.resolve(abi).apply { mkdirs() }
 
@@ -111,6 +206,7 @@ val buildWoff2DecoderFromSource = tasks.register("buildWoff2DecoderFromSource") 
                     "-S", cppDir.absolutePath,
                     "-B", abiBuildDir.absolutePath,
                     "-DCMAKE_TOOLCHAIN_FILE=${ndkRoot.resolve("build/cmake/android.toolchain.cmake").invariantSeparatorsPath}",
+                    "-DCMAKE_MAKE_PROGRAM=${ninja.invariantSeparatorsPath}",
                     "-DANDROID_ABI=$abi",
                     "-DANDROID_NATIVE_API_LEVEL=21",
                     "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
@@ -175,6 +271,16 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.18
+        * Apply reply name styles before Discord calculates reply preview spacing.
+
+        # 0.0.17
+        * Fix styled reply names overlapping the replied-to message text.
+
+        # 0.0.16
+        * Make role gradients closer to Discord web.
+        * Fix member-list users sometimes showing as null.
+
         # 0.0.15
         * Link the author metadata to my Discord profile.
 

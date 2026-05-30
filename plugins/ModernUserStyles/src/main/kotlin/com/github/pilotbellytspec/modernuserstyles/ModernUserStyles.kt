@@ -10,6 +10,7 @@ import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
+import com.aliucord.patcher.before
 import com.discord.models.member.GuildMember
 import com.discord.stores.StoreMessageReplies
 import com.discord.stores.StoreStream
@@ -48,6 +49,7 @@ import java.util.WeakHashMap
 class ModernUserStyles : Plugin() {
     private lateinit var renderer: NameRenderer
     private lateinit var roles: RoleGradientResolver
+    private val profileUsernames = mutableMapOf<Long, String>()
     private val profileDisplayNames = mutableMapOf<Long, String>()
     private val profileStyles = mutableMapOf<Long, DisplayStyleData>()
     private val requestedProfiles = mutableSetOf<String>()
@@ -57,6 +59,7 @@ class ModernUserStyles : Plugin() {
     private val loadedGuildRoles = mutableSetOf<Long>()
     private val guildRoleFetchCallbacks = mutableMapOf<Long, MutableList<() -> Unit>>()
     private val renderedUserIds = WeakHashMap<TextView, Long>()
+    private val replyNameContexts = WeakHashMap<WidgetChatListAdapterItemMessage, ReplyNameContext>()
 
     init {
         settingsTab = SettingsTab(PluginSettings::class.java, SettingsTab.Type.BOTTOM_SHEET).withArgs(settings)
@@ -100,7 +103,7 @@ class ModernUserStyles : Plugin() {
             val member = entry.author
             val nameView = itemView.findViewById<TextView>(nameId)
             val guildId = member?.guildId
-            val preserveName = member?.nick != null
+            val preserveName = member.hasCleanNick()
             ensureGuildRolesFetched(guildId) {
                 if (renderedUserIds[nameView] == user.id) {
                     renderUserName(
@@ -127,44 +130,45 @@ class ModernUserStyles : Plugin() {
     }
 
     private fun patchReplyNames() {
-        patcher.after<WidgetChatListAdapterItemMessage>(
+        patcher.before<WidgetChatListAdapterItemMessage>(
             "configureReplyPreview",
             MessageEntry::class.java,
         ) {
-            if (!settings.getBool("chatNames", true)) return@after
+            if (!settings.getBool("chatNames", true)) return@before
 
             val entry = it.args[0] as MessageEntry
-            val replyData = entry.replyData ?: return@after
-            if (replyData.messageState !is StoreMessageReplies.MessageState.Loaded) return@after
+            val replyData = entry.replyData ?: return@before
+            if (replyData.messageState !is StoreMessageReplies.MessageState.Loaded) return@before
 
             val refEntry = replyData.messageEntry
             val user = refEntry.message.author
             val member = refEntry.author
             val guildId = member?.guildId ?: entry.author?.guildId
-            val nameView = readObject("replyName") as? TextView ?: return@after
-            val preserveName = member?.nick != null
+            replyNameContexts[this] = ReplyNameContext(user.id, user, member, guildId)
+            ensureProfileFetched(user.id, guildId)
+            ensureGuildRolesFetched(guildId)
+        }
 
-            ensureGuildRolesFetched(guildId) {
-                if (renderedUserIds[nameView] == user.id) {
-                    renderUserName(
-                        nameView,
-                        user.id,
-                        if (preserveName) null else displayNameFor(user.id, user),
-                        styleFor(user.id, user),
-                        roles.forMember(member),
-                        guildId,
-                        preserveName,
-                    )
-                }
-            }
+        patcher.after<WidgetChatListAdapterItemMessage>(
+            "configureReplyName",
+            String::class.java,
+            Int::class.javaPrimitiveType!!,
+            Boolean::class.javaPrimitiveType!!,
+        ) {
+            if (!settings.getBool("chatNames", true)) return@after
+
+            val context = replyNameContexts[this] ?: return@after
+            val nameView = readObject("replyName") as? TextView ?: return@after
+            val preserveName = context.member.hasCleanNick()
             renderUserName(
                 nameView,
-                user.id,
-                if (preserveName) null else displayNameFor(user.id, user),
-                styleFor(user.id, user),
-                roles.forMember(member),
-                guildId,
+                context.userId,
+                if (preserveName) null else displayNameFor(context.userId, context.user),
+                styleFor(context.userId, context.user),
+                roles.forMember(context.member),
+                context.guildId,
                 preserveName,
+                fetchAsync = false,
             )
         }
     }
@@ -185,7 +189,7 @@ class ModernUserStyles : Plugin() {
             val member = StoreStream.getGuilds().getMember(guildId, item.userId)
             ensureGuildRolesFetched(guildId) {
                 val refreshedMember = StoreStream.getGuilds().getMember(guildId, item.userId)
-                val preserveName = refreshedMember?.nick != null
+                val preserveName = refreshedMember.hasCleanNick()
                 renderUserNameViews(
                     usernameView,
                     item.userId,
@@ -196,7 +200,7 @@ class ModernUserStyles : Plugin() {
                     preserveName,
                 )
             }
-            val preserveName = member?.nick != null
+            val preserveName = member.hasCleanNick()
             renderUserNameViews(
                 usernameView,
                 item.userId,
@@ -278,7 +282,7 @@ class ModernUserStyles : Plugin() {
             cacheUserObject(loaded.user.id, loaded.user)
             val nameView = UserProfileHeaderView.`access$getBinding$p`(this).root.findViewById<TextView>(usernameTextId)
             val guildId = loaded.guildMember?.guildId
-            val preserveName = loaded.guildMember?.nick != null
+            val preserveName = loaded.guildMember.hasCleanNick()
             ensureGuildRolesFetched(guildId) {
                 if (renderedUserIds[nameView] == loaded.user.id) {
                     renderUserName(
@@ -375,7 +379,7 @@ class ModernUserStyles : Plugin() {
             val item = it.args[0] as UserAutocompletable
             val nameView = rootFromBinding(this)?.findViewById<TextView>(nameId)
             val guildId = item.guildMember?.guildId
-            val preserveName = item.guildMember?.nick != null
+            val preserveName = item.guildMember.hasCleanNick()
             ensureGuildRolesFetched(guildId) {
                 if (nameView != null && renderedUserIds[nameView] == item.user.id) {
                     renderUserName(
@@ -445,7 +449,7 @@ class ModernUserStyles : Plugin() {
             val member = guildId?.let { StoreStream.getGuilds().getMember(it, item.user.id) }
             ensureGuildRolesFetched(guildId) {
                 val refreshedMember = guildId?.let { StoreStream.getGuilds().getMember(it, item.user.id) }
-                val preserveName = refreshedMember?.nick != null
+                val preserveName = refreshedMember.hasCleanNick()
                 if (nameView != null && renderedUserIds[nameView] == item.user.id) {
                     renderUserName(
                         nameView,
@@ -458,7 +462,7 @@ class ModernUserStyles : Plugin() {
                     )
                 }
             }
-            val preserveName = member?.nick != null
+            val preserveName = member.hasCleanNick()
             renderUserName(
                 nameView,
                 item.user.id,
@@ -479,7 +483,7 @@ class ModernUserStyles : Plugin() {
             val member = item.participant.guildMember
             val nameView = rootFromBinding(this)?.findViewById<TextView>(voiceUserListId)
             val guildId = member.guildId
-            val preserveName = member.nick != null
+            val preserveName = member.hasCleanNick()
             ensureGuildRolesFetched(guildId) {
                 if (nameView != null && renderedUserIds[nameView] == member.userId) {
                     renderUserName(
@@ -509,7 +513,7 @@ class ModernUserStyles : Plugin() {
             val member = item.voiceUser.guildMember
             val nameView = rootFromBinding(this)?.findViewById<TextView>(voiceUserListId)
             val guildId = member.guildId
-            val preserveName = member.nick != null
+            val preserveName = member.hasCleanNick()
             ensureGuildRolesFetched(guildId) {
                 if (nameView != null && renderedUserIds[nameView] == member.userId) {
                     renderUserName(
@@ -539,7 +543,7 @@ class ModernUserStyles : Plugin() {
             val member = item.voiceUser.guildMember
             val nameView = rootFromBinding(this)?.findViewById<TextView>(stageSpeakerNameId)
             val guildId = member.guildId
-            val preserveName = member.nick != null
+            val preserveName = member.hasCleanNick()
             ensureGuildRolesFetched(guildId) {
                 if (nameView != null && renderedUserIds[nameView] == member.userId) {
                     renderUserName(
@@ -578,7 +582,7 @@ class ModernUserStyles : Plugin() {
             val member = item.guildMember ?: return@after
             val nameView = rootFromBinding(this)?.findViewById<TextView>(nameId)
             val guildId = member.guildId
-            val preserveName = member.nick != null
+            val preserveName = member.hasCleanNick()
             ensureGuildRolesFetched(guildId) {
                 if (nameView != null && renderedUserIds[nameView] == member.userId) {
                     renderUserName(
@@ -625,20 +629,32 @@ class ModernUserStyles : Plugin() {
         roleGradient: RoleGradient?,
         guildId: Long? = null,
         preserveExistingNameOnRefresh: Boolean = false,
+        fetchAsync: Boolean = true,
     ) {
-        if (textView != null) {
+        if (textView != null && fetchAsync) {
             renderedUserIds[textView] = userId
             ensureProfileFetched(userId, guildId) {
                 if (renderedUserIds[textView] == userId) {
                     val refreshedLabel = if (preserveExistingNameOnRefresh) label else displayNameFor(userId, null)
-                    renderUserName(textView, userId, refreshedLabel, styleFor(userId, null), roleGradient, guildId, preserveExistingNameOnRefresh)
+                    renderUserName(
+                        textView,
+                        userId,
+                        refreshedLabel,
+                        styleFor(userId, null),
+                        roleGradient,
+                        guildId,
+                        preserveExistingNameOnRefresh,
+                    )
                 }
             }
         }
 
+        val resolvedLabel = label.cleanName()
+            ?: if (preserveExistingNameOnRefresh) null else usernameFor(userId)
+
         renderer.renderTextView(
             textView,
-            label,
+            resolvedLabel,
             style,
             roleGradient,
             settings.getBool("displayNames", true),
@@ -646,6 +662,13 @@ class ModernUserStyles : Plugin() {
             settings.getBool("roleGradients", true),
         )
     }
+
+    private data class ReplyNameContext(
+        val userId: Long,
+        val user: Any?,
+        val member: GuildMember?,
+        val guildId: Long?,
+    )
 
     private fun ensureProfileFetched(userId: Long, guildId: Long? = null, onLoaded: (() -> Unit)? = null) {
         val realGuildId = guildId?.takeIf { it != 0L }
@@ -714,11 +737,13 @@ class ModernUserStyles : Plugin() {
 
     private fun parseProfilePayload(userId: Long, root: JSONObject) {
         root.optJSONObject("user")?.let { user ->
-            user.optString("global_name").takeIf { it.trim().isNotEmpty() }?.let { profileDisplayNames[userId] = it }
+            user.optCleanString("username")?.let { profileUsernames[userId] = it }
+            user.optCleanString("global_name")?.let { profileDisplayNames[userId] = it }
             parseDisplayStyle(user.optJSONObject("display_name_styles"))?.let { profileStyles[userId] = it }
         }
         root.optJSONObject("profile_user")?.let { user ->
-            user.optString("global_name").takeIf { it.trim().isNotEmpty() }?.let { profileDisplayNames[userId] = it }
+            user.optCleanString("username")?.let { profileUsernames[userId] = it }
+            user.optCleanString("global_name")?.let { profileDisplayNames[userId] = it }
             parseDisplayStyle(user.optJSONObject("display_name_styles"))?.let { profileStyles[userId] = it }
         }
 
@@ -804,9 +829,14 @@ class ModernUserStyles : Plugin() {
     }
 
     private fun displayNameFor(userId: Long, fallbackUser: Any?): String? =
-        profileDisplayNames[userId]
-            ?: fallbackUser.readString("globalName", "getGlobalName")?.takeIf { it.trim().isNotEmpty() }
-            ?: StoreStream.getUsers().users[userId].readString("globalName", "getGlobalName")?.takeIf { it.trim().isNotEmpty() }
+        profileDisplayNames[userId].cleanName()
+            ?: fallbackUser.readString("globalName", "getGlobalName").cleanName()
+            ?: StoreStream.getUsers().users[userId].readString("globalName", "getGlobalName").cleanName()
+
+    private fun usernameFor(userId: Long, fallbackUser: Any? = null): String? =
+        profileUsernames[userId].cleanName()
+            ?: fallbackUser.readString("username", "getUsername").cleanName()
+            ?: StoreStream.getUsers().users[userId]?.username.cleanName()
 
     private fun styleFor(userId: Long, fallbackUser: Any?): DisplayStyleData? =
         profileStyles[userId] ?: fallbackUser.readDisplayStyle() ?: StoreStream.getUsers().users[userId].readDisplayStyle()
@@ -817,7 +847,10 @@ class ModernUserStyles : Plugin() {
     }
 
     private fun cacheUserObject(userId: Long, user: Any?) {
-        user.readString("globalName", "getGlobalName")?.takeIf { it.trim().isNotEmpty() }?.let {
+        user.readString("username", "getUsername").cleanName()?.let {
+            profileUsernames[userId] = it
+        }
+        user.readString("globalName", "getGlobalName").cleanName()?.let {
             profileDisplayNames[userId] = it
         }
         user.readDisplayStyle()?.let {
@@ -841,6 +874,9 @@ class ModernUserStyles : Plugin() {
 
     private fun Any?.readString(vararg names: String): String? =
         readObject(*names) as? String
+
+    private fun GuildMember?.hasCleanNick(): Boolean =
+        this?.nick.cleanName() != null
 
     private fun Any?.readInt(vararg names: String): Int? =
         when (val value = readObject(*names)) {
@@ -895,7 +931,7 @@ class ModernUserStyles : Plugin() {
     private fun styleMatchingTextViews(root: View, userId: Long, user: Any?) {
         if (root is TextView) {
             val text = root.text?.toString()
-            val username = user.readString("username", "getUsername") ?: StoreStream.getUsers().users[userId]?.username
+            val username = usernameFor(userId, user)
             val global = displayNameFor(userId, user)
             if (text == username || text == global) {
                 renderUserName(root, userId, global, styleFor(userId, user), null)
@@ -934,5 +970,11 @@ private fun JSONObject.optNullableInt(key: String): Int? =
 private fun JSONObject.optNullableColor(key: String): Int? =
     optNullableInt(key)?.and(0x00ffffff)
 
+private fun JSONObject.optCleanString(key: String): String? =
+    if (has(key) && !isNull(key)) optString(key).cleanName() else null
+
 private fun JSONArray.optNullableColor(index: Int): Int? =
     if (isNull(index)) null else optInt(index) and 0x00ffffff
+
+private fun String?.cleanName(): String? =
+    this?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }

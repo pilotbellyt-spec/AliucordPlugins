@@ -6,6 +6,7 @@ import android.graphics.Shader
 import android.text.TextPaint
 import android.text.style.CharacterStyle
 import android.text.style.UpdateAppearance
+import android.content.res.Resources
 import androidx.core.graphics.ColorUtils
 
 class NameStyleSpan(
@@ -15,7 +16,7 @@ class NameStyleSpan(
 ) : CharacterStyle(), UpdateAppearance {
     override fun updateDrawState(tp: TextPaint) {
         val safeColors = colors.takeIf { it.isNotEmpty() } ?: return
-        val main = safeColors[0] or Color.BLACK
+        val main = DiscordRoleGradient.opaque(safeColors[0])
 
         tp.shader = null
         tp.color = main
@@ -45,60 +46,19 @@ class NameStyleSpan(
     }
 
     private fun applyGradient(tp: TextPaint, source: IntArray) {
-        val base = source.map { enhance(it or Color.BLACK) }.distinct().toIntArray()
-        val gradientColors = when {
-            base.size > 1 -> spreadStops(base)
-            else -> intArrayOf(base[0], brighten(base[0], 0.42f))
-        }
+        val gradientColors = DiscordRoleGradient.shaderColors(source.toList())
 
-        val width = (textLength.coerceAtLeast(1) * tp.textSize * 0.46f).coerceAtLeast(tp.textSize * 1.4f)
+        val density = tp.density.takeIf { it > 0f } ?: Resources.getSystem().displayMetrics.density
+        val width = DiscordRoleGradient.periodPx(density)
         tp.shader = LinearGradient(
             0f,
             0f,
             width,
             0f,
             gradientColors,
-            positionsFor(gradientColors.size),
-            Shader.TileMode.CLAMP,
+            DiscordRoleGradient.positions(gradientColors.size),
+            Shader.TileMode.REPEAT,
         )
-    }
-
-    private fun spreadStops(source: IntArray): IntArray {
-        if (source.size == 2) {
-            return intArrayOf(
-                brighten(source[0], 0.16f),
-                source[0],
-                source[1],
-                brighten(source[1], 0.22f),
-            )
-        }
-
-        val result = mutableListOf<Int>()
-        source.forEachIndexed { index, color ->
-            result.add(if (index % 2 == 0) brighten(color, 0.12f) else darken(color, 0.12f))
-            result.add(color)
-        }
-        return result.toIntArray()
-    }
-
-    private fun positionsFor(size: Int): FloatArray? {
-        if (size <= 1) return null
-        val positions = FloatArray(size)
-        var index = 0
-        while (index < size) {
-            positions[index] = index.toFloat() / (size - 1).toFloat()
-            index++
-        }
-        return positions
-    }
-
-    private fun enhance(color: Int): Int {
-        val luminance = ColorUtils.calculateLuminance(color)
-        return when {
-            luminance < 0.18 -> brighten(color, 0.28f)
-            luminance > 0.82 -> darken(color, 0.16f)
-            else -> color
-        }
     }
 
     private fun brighten(color: Int, amount: Float): Int =

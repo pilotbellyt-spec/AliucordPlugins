@@ -14,6 +14,12 @@ ModernUserStyles backports DiscordRN gradient role colors and custom display nam
 
 ## Build
 
+Initialize submodules before building:
+
+```powershell
+git submodule update --init --recursive
+```
+
 ```powershell
 .\gradlew.bat --no-configuration-cache :plugins:ModernUserStyles:make
 ```
@@ -33,3 +39,5 @@ plugins/ModernUserStyles/build/outputs/ModernUserStyles.zip
 ## Notes
 
 This plugin targets Aliucord on Discord Android `126021`. It uses Aliucord patching APIs and Discord's existing authenticated REST/Gateway state where available; it does not copy Discord web client code.
+
+WOFF2 decoder native libraries are compiled from the `khoben/woff2-android` submodule during the Gradle build and are only packaged into the generated plugin zip.

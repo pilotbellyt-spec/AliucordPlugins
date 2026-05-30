@@ -8,16 +8,127 @@ description = "Backport of gradient user roles & custom display names features f
 dependencies {
     implementation("io.github.khoben.woff2-android:typeface:0.0.2") {
         exclude(group = "org.jetbrains.kotlin")
+        exclude(group = "io.github.khoben.woff2-android", module = "decoder")
     }
     implementation("androidx.startup:startup-runtime:1.2.0") {
         exclude(group = "org.jetbrains.kotlin")
     }
 }
 
+val woff2SourceDir = layout.projectDirectory.dir("../../third_party/woff2-android")
+val woff2NativeOutputDir = layout.buildDirectory.dir("modern_user_styles_native")
+
+fun androidSdkDir(): File {
+    System.getenv("ANDROID_HOME")?.takeIf { it.isNotBlank() }?.let { return file(it) }
+    System.getenv("ANDROID_SDK_ROOT")?.takeIf { it.isNotBlank() }?.let { return file(it) }
+
+    val localProperties = rootProject.file("local.properties")
+    if (localProperties.exists()) {
+        localProperties.readLines()
+            .firstOrNull { it.startsWith("sdk.dir=") }
+            ?.substringAfter('=')
+            ?.replace("\\:", ":")
+            ?.replace("\\\\", "\\")
+            ?.let { return file(it) }
+    }
+
+    throw GradleException("Android SDK not found. Set ANDROID_HOME or sdk.dir in local.properties.")
+}
+
+fun androidSdkPackageVersion(sdkDir: File, packageName: String, envName: String): String {
+    System.getenv(envName)?.takeIf { it.isNotBlank() }?.let { return it }
+    val packageDir = sdkDir.resolve(packageName)
+    return packageDir.listFiles()
+        ?.filter { it.isDirectory }
+        ?.map { it.name }
+        ?.sortedDescending()
+        ?.firstOrNull()
+        ?: throw GradleException("Android SDK package '$packageName' not found in $sdkDir.")
+}
+
+fun executableName(name: String): String =
+    if (System.getProperty("os.name").lowercase().contains("windows")) "$name.exe" else name
+
+fun pythonCommand(): String {
+    System.getenv("MODERN_USER_STYLES_PYTHON")?.takeIf { it.isNotBlank() }?.let { return it }
+    return if (System.getProperty("os.name").lowercase().contains("windows")) "python" else "python3"
+}
+
+fun runCommand(workingDir: File, command: List<String>) {
+    val exitCode = ProcessBuilder(command)
+        .directory(workingDir)
+        .inheritIO()
+        .start()
+        .waitFor()
+    if (exitCode != 0) {
+        throw GradleException("Command failed with exit code $exitCode: ${command.joinToString(" ")}")
+    }
+}
+
+val buildWoff2DecoderFromSource = tasks.register("buildWoff2DecoderFromSource") {
+    val outputDir = woff2NativeOutputDir
+    outputs.dir(outputDir)
+
+    doLast {
+        val sourceDir = woff2SourceDir.asFile
+        val buildScript = sourceDir.resolve("scripts/build_ndk.py")
+        if (!buildScript.exists()) {
+            throw GradleException("Missing woff2-android source checkout. Run: git submodule update --init --recursive")
+        }
+
+        val sdkDir = androidSdkDir()
+        val ndkVersion = androidSdkPackageVersion(sdkDir, "ndk", "MODERN_USER_STYLES_NDK_VERSION")
+        val cmakeVersion = androidSdkPackageVersion(sdkDir, "cmake", "MODERN_USER_STYLES_CMAKE_VERSION")
+        val cmake = sdkDir.resolve("cmake/$cmakeVersion/bin/${executableName("cmake")}")
+        val ndkRoot = sdkDir.resolve("ndk/$ndkVersion")
+        val nativeOut = outputDir.get().asFile
+
+        sourceDir.resolve("scripts/build_ndk.properties").writeText(
+            """
+            WOFF2_REPO=https://github.com/google/woff2.git
+            WOFF2_VERSION=v1.0.2
+            ANDROID_SDK=${sdkDir.invariantSeparatorsPath}
+            NDK_VERSION=$ndkVersion
+            CMAKE_VERSION=$cmakeVersion
+            MIN_ANDROID_SDK=21
+            """.trimIndent(),
+        )
+
+        delete(nativeOut)
+        nativeOut.mkdirs()
+
+        runCommand(sourceDir, listOf(pythonCommand(), "scripts/build_ndk.py"))
+
+        val cppDir = sourceDir.resolve("libwoff2dec/src/main/cpp")
+        listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64").forEach { abi ->
+            val abiBuildDir = layout.buildDirectory.dir("woff2decoder_cmake/$abi").get().asFile
+            val abiOutDir = nativeOut.resolve(abi).apply { mkdirs() }
+
+            runCommand(
+                projectDir,
+                listOf(
+                    cmake.absolutePath,
+                    "-S", cppDir.absolutePath,
+                    "-B", abiBuildDir.absolutePath,
+                    "-DCMAKE_TOOLCHAIN_FILE=${ndkRoot.resolve("build/cmake/android.toolchain.cmake").invariantSeparatorsPath}",
+                    "-DANDROID_ABI=$abi",
+                    "-DANDROID_NATIVE_API_LEVEL=21",
+                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                    "-DCMAKE_BUILD_TYPE=Release",
+                    "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${abiOutDir.invariantSeparatorsPath}",
+                    "-G", "Ninja",
+                ),
+            )
+            runCommand(projectDir, listOf(cmake.absolutePath, "--build", abiBuildDir.absolutePath, "--config", "Release", "--target", "woff2decoder"))
+        }
+    }
+}
+
 fun appendModernUserStyleResources() {
     val output = layout.buildDirectory.file("outputs/ModernUserStyles.zip").get().asFile
     val packageDir = layout.projectDirectory.dir("src/main/modern_user_styles_package").asFile
-    if (!output.exists() || !packageDir.exists()) return
+    val nativeDir = woff2NativeOutputDir.get().asFile
+    if (!output.exists() || !packageDir.exists() || !nativeDir.exists()) return
 
     val temp = output.resolveSibling("${output.name}.tmp")
     ZipInputStream(output.inputStream().buffered()).use { input ->
@@ -34,7 +145,17 @@ fun appendModernUserStyleResources() {
                 .filter { it.isFile }
                 .forEach { file ->
                     val name = packageDir.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+                    if (name.startsWith("native/")) return@forEach
                     zip.putNextEntry(ZipEntry("modern_user_styles/$name"))
+                    file.inputStream().buffered().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+
+            nativeDir.walkTopDown()
+                .filter { it.isFile && it.name == "libwoff2decoder.so" }
+                .forEach { file ->
+                    val name = nativeDir.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+                    zip.putNextEntry(ZipEntry("modern_user_styles/native/$name"))
                     file.inputStream().buffered().use { it.copyTo(zip) }
                     zip.closeEntry()
                 }
@@ -45,6 +166,7 @@ fun appendModernUserStyleResources() {
 }
 
 tasks.named("make") {
+    dependsOn(buildWoff2DecoderFromSource)
     doLast {
         appendModernUserStyleResources()
     }

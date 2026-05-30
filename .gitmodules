@@ -1,0 +1,3 @@
+[submodule "third_party/woff2-android"]
+	path = third_party/woff2-android
+	url = https://github.com/khoben/woff2-android.git

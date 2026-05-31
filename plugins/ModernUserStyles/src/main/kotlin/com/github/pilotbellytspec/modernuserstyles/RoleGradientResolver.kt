@@ -9,6 +9,11 @@ import com.discord.stores.StoreStream
 class RoleGradientResolver {
     private val runtimeRoleStyles = mutableMapOf<Long, RoleGradient>()
     private val runtimeRolePositions = mutableMapOf<Long, Int>()
+    private val enhancedRoleColorsGuilds = mutableMapOf<Long, Boolean>()
+
+    fun setGuildEnhancedRoleColors(guildId: Long, enabled: Boolean) {
+        enhancedRoleColorsGuilds[guildId] = enabled
+    }
 
     fun setRuntimeRoleGradient(roleId: Long, gradient: RoleGradient?) {
         if (gradient == null || gradient.primaryColor == 0) {
@@ -35,7 +40,7 @@ class RoleGradientResolver {
         member.roles
             .mapNotNull { roleId ->
                 val role = roleMap[roleId]
-                val style = forRoleId(roleId, role) ?: return@mapNotNull null
+                val style = forRoleId(guildId, roleId, role) ?: return@mapNotNull null
                 RoleStyleCandidate(
                     roleId = roleId,
                     position = rolePosition(roleId, role),
@@ -49,15 +54,24 @@ class RoleGradientResolver {
         return null
     }
 
-    private fun forRoleId(roleId: Long, role: GuildRole?): RoleGradient? {
-        runtimeRoleStyles[roleId]?.let { return it }
+    private fun forRoleId(guildId: Long, roleId: Long, role: GuildRole?): RoleGradient? {
+        runtimeRoleStyles[roleId]?.let {
+            return if (guildAllowsEnhancedRoleColors(guildId)) {
+                it
+            } else {
+                it.copy(secondaryColor = null, tertiaryColor = null)
+            }
+        }
         if (role == null) return null
 
-        reflectedColors(role)?.let { return it }
+        reflectedPrimaryColor(role)?.let { return it }
         return role.color.takeIf { it != 0 }?.let { RoleGradient(it and 0x00ffffff, position = role.position) }
     }
 
-    private fun reflectedColors(role: GuildRole): RoleGradient? {
+    private fun guildAllowsEnhancedRoleColors(guildId: Long): Boolean =
+        enhancedRoleColorsGuilds[guildId] == true
+
+    private fun reflectedPrimaryColor(role: GuildRole): RoleGradient? {
         role.javaClass.declaredFields.forEach { field ->
             runCatching {
                 field.isAccessible = true
@@ -65,14 +79,10 @@ class RoleGradientResolver {
                 if (value.javaClass.name != "com.discord.api.role.GuildRoleColors") return@forEach
 
                 val primary = value.readInt("primaryColor") ?: role.color
-                val secondary = value.readInt("secondaryColor")
-                val tertiary = value.readInt("tertiaryColor")
                 if (primary == 0) return@forEach
 
                 return RoleGradient(
                     primaryColor = primary and 0x00ffffff,
-                    secondaryColor = secondary?.and(0x00ffffff),
-                    tertiaryColor = tertiary?.and(0x00ffffff),
                     position = role.position,
                 )
             }

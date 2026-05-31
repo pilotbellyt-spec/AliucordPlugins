@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.24"
+version = "0.0.27"
 description = "Backport of gradient user roles & custom display names features from DiscordRN"
 
 dependencies {
@@ -271,6 +271,15 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.27
+        * Gate role gradients and holographic role colors on the server's Enhanced Role Styles perk instead of treating booster roles specially.
+
+        # 0.0.26
+        * Keep premium subscriber roles from creating false chat gradients while preserving their primary color.
+
+        # 0.0.25
+        * Prevent reflected legacy role color data from creating false chat gradients.
+
         # 0.0.24
         * Fix profile effect animations being wiped by follow-up renders.
 

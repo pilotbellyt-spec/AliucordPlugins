@@ -721,6 +721,15 @@ class ModernUserStyles : Plugin() {
 
         Utils.threadPool.execute {
             runCatching {
+                Http.Request.newDiscordRNRequest("/guilds/$realGuildId").execute().use { response ->
+                    parseGuildFeaturesPayload(realGuildId, JSONObject(response.text()))
+                }
+            }.onFailure {
+                logger.warn("Failed to fetch modern guild features for $realGuildId", it)
+                roles.setGuildEnhancedRoleColors(realGuildId, false)
+            }
+
+            runCatching {
                 Http.Request.newDiscordRNRequest("/guilds/$realGuildId/roles").execute().use { response ->
                     parseGuildRolesPayload(JSONArray(response.text()))
                 }
@@ -738,6 +747,12 @@ class ModernUserStyles : Plugin() {
                 }
             }
         }
+    }
+
+    private fun parseGuildFeaturesPayload(guildId: Long, root: JSONObject) {
+        val features = root.optJSONArray("features")
+            ?: root.optJSONObject("guild")?.optJSONArray("features")
+        roles.setGuildEnhancedRoleColors(guildId, features.hasString("ENHANCED_ROLE_COLORS"))
     }
 
     private fun parseProfilePayload(userId: Long, root: JSONObject) {
@@ -793,7 +808,9 @@ class ModernUserStyles : Plugin() {
             if (roleId != null && colors != null) {
                 val primary = colors.optNullableColor("primary_color") ?: role.optNullableColor("color")
                 val secondary = colors.optNullableColor("secondary_color")
+                    ?.takeIf { it != primary }
                 val tertiary = colors.optNullableColor("tertiary_color")
+                    ?.takeIf { it != primary && it != secondary }
                 if (primary != null && primary != 0) {
                     roles.setRuntimeRoleGradient(
                         roleId,
@@ -980,6 +997,16 @@ private fun JSONObject.optCleanString(key: String): String? =
 
 private fun JSONArray.optNullableColor(index: Int): Int? =
     if (isNull(index)) null else optInt(index) and 0x00ffffff
+
+private fun JSONArray?.hasString(value: String): Boolean {
+    val array = this ?: return false
+    var index = 0
+    while (index < array.length()) {
+        if (array.optString(index) == value) return true
+        index++
+    }
+    return false
+}
 
 private fun String?.cleanName(): String? =
     this?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }

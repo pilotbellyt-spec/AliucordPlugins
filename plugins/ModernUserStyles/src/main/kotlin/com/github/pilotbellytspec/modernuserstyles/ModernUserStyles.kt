@@ -778,47 +778,26 @@ class ModernUserStyles : Plugin() {
     }
 
     private fun parseProfilePayload(userId: Long, root: JSONObject) {
+        var parsedStyle: DisplayStyleData? = null
         root.optJSONObject("user")?.let { user ->
             user.optCleanString("username")?.let { profileUsernames[userId] = it }
             user.optCleanString("global_name")?.let { profileDisplayNames[userId] = it }
-            parseDisplayStyle(user.optJSONObject("display_name_styles"))?.let { profileStyles[userId] = it }
+            parsedStyle = parseDisplayStyle(user.optJSONObject("display_name_styles")) ?: parsedStyle
         }
         root.optJSONObject("profile_user")?.let { user ->
             user.optCleanString("username")?.let { profileUsernames[userId] = it }
             user.optCleanString("global_name")?.let { profileDisplayNames[userId] = it }
-            parseDisplayStyle(user.optJSONObject("display_name_styles"))?.let { profileStyles[userId] = it }
+            parsedStyle = parseDisplayStyle(user.optJSONObject("display_name_styles")) ?: parsedStyle
         }
 
-        parseDisplayStyle(root.optJSONObject("display_name_styles"))?.let { profileStyles[userId] = it }
-        parseDisplayStyle(root.optJSONObject("guild_member")?.optJSONObject("display_name_styles"))?.let { profileStyles[userId] = it }
-        parseDisplayStyle(root.optJSONObject("guild_member_profile")?.optJSONObject("display_name_styles"))?.let { profileStyles[userId] = it }
-        findDisplayStyleObject(root)?.let { style ->
-            parseDisplayStyle(style)?.let { profileStyles[userId] = it }
+        parsedStyle = parseDisplayStyle(root.optJSONObject("display_name_styles")) ?: parsedStyle
+        parsedStyle = parseDisplayStyle(root.optJSONObject("guild_member")?.optJSONObject("display_name_styles")) ?: parsedStyle
+        parsedStyle = parseDisplayStyle(root.optJSONObject("guild_member_profile")?.optJSONObject("display_name_styles")) ?: parsedStyle
+        if (parsedStyle != null) {
+            profileStyles[userId] = parsedStyle
+        } else {
+            profileStyles.remove(userId)
         }
-    }
-
-    private fun findDisplayStyleObject(value: Any?): JSONObject? {
-        when (value) {
-            is JSONObject -> {
-                val direct = value.optJSONObject("display_name_styles")
-                if (direct != null) return direct
-
-                val keys = value.keys()
-                while (keys.hasNext()) {
-                    val found = findDisplayStyleObject(value.opt(keys.next()))
-                    if (found != null) return found
-                }
-            }
-            is JSONArray -> {
-                var index = 0
-                while (index < value.length()) {
-                    val found = findDisplayStyleObject(value.opt(index))
-                    if (found != null) return found
-                    index++
-                }
-            }
-        }
-        return null
     }
 
     private fun parseGuildRolesPayload(array: JSONArray) {
@@ -897,8 +876,12 @@ class ModernUserStyles : Plugin() {
         user.readString("globalName", "getGlobalName").cleanName()?.let {
             profileDisplayNames[userId] = it
         }
-        user.readDisplayStyle()?.let {
-            profileStyles[userId] = it
+        user.readDisplayStyle().let {
+            if (it != null) {
+                profileStyles[userId] = it
+            } else if (user.readObject("displayNameStyles", "getDisplayNameStyles") != null) {
+                profileStyles.remove(userId)
+            }
         }
     }
 

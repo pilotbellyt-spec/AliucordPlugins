@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.28"
+version = "0.0.29"
 description = "Backport of gradient user roles & custom display names features from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,9 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.29
+        * Prevent display-name fonts from leaking onto users whose profile payload does not include a font style.
+
         # 0.0.28
         * Use bundled TTF/OTF display-name fonts instead of native font decoding.
         * Re-render reply names after profile and role data loads so custom fonts and role colors stay consistent.

@@ -17,7 +17,7 @@ jobs:
   deploy:
     name: Build & Deploy Plugins
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -44,7 +44,7 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" "cmake;3.22.1"
 
-      - name: Build
+      - name: Build all plugins and updater metadata
         env:
           MODERN_USER_STYLES_NDK_VERSION: "28.2.13676358"
           MODERN_USER_STYLES_CMAKE_VERSION: "3.22.1"

@@ -38,7 +38,7 @@ subprojects {
     configure<AliucordExtension> {
         author("pilot bell", 1501048399485468697L, hyperlink = true)
 
-        github("https://github.com/pilotbellyt-spec/ModernUserStyles")
+        github("https://github.com/pilotbellyt-spec/AliucordPlugins")
     }
 
     configure<KtlintExtension> {

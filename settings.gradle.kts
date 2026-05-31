@@ -24,7 +24,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "aliucord-plugins"
+rootProject.name = "AliucordPlugins"
 include(":plugins")
 
 // Add each directory under ./plugins as a separate project

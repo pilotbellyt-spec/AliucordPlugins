@@ -11,7 +11,6 @@ import android.text.Spanned
 import android.view.View
 import android.view.animation.LinearInterpolator
 import android.widget.TextView
-import com.github.khoben.woff2android.Woff2Typeface
 import com.discord.utilities.view.text.SimpleDraweeSpanTextView
 import java.util.WeakHashMap
 
@@ -23,13 +22,6 @@ class NameRenderer(private val context: Context) {
     private val animationKeys = WeakHashMap<TextView, String>()
     private val loadedFonts = mutableMapOf<Int, Typeface?>()
     private val resources = PluginZipResources(context)
-    private val woff2Typeface by lazy {
-        runCatching {
-            resources.loadNativeDecoder()
-            Woff2Typeface.Initializer().create(context.applicationContext)
-            Woff2Typeface.get()
-        }.getOrNull()
-    }
 
     fun renderTextView(
         textView: TextView?,
@@ -153,8 +145,8 @@ class NameRenderer(private val context: Context) {
         return loadedFonts.getOrPut(fontId) {
             val path = DisplayNameCatalog.zipFontPath(fontId) ?: return@getOrPut null
             runCatching {
-                val bytes = resources.readEntry(path) ?: return@runCatching null
-                woff2Typeface?.createFromBytes(bytes)
+                val file = resources.extractEntry(path, "fonts") ?: return@runCatching null
+                Typeface.createFromFile(file)
             }.getOrNull()
         }
     }

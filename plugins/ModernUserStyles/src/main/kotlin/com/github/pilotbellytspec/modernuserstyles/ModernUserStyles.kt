@@ -142,11 +142,16 @@ class ModernUserStyles : Plugin() {
 
             val refEntry = replyData.messageEntry
             val user = refEntry.message.author
-            val member = refEntry.author
-            val guildId = member?.guildId ?: entry.author?.guildId
-            replyNameContexts[this] = ReplyNameContext(user.id, user, member, guildId)
-            ensureProfileFetched(user.id, guildId)
-            ensureGuildRolesFetched(guildId)
+            val guildId = refEntry.author?.guildId ?: entry.author?.guildId
+            val member = refEntry.author ?: guildId?.let { guild -> StoreStream.getGuilds().getMember(guild, user.id) }
+            val context = ReplyNameContext(user.id, user, member, guildId)
+            replyNameContexts[this] = context
+            ensureProfileFetched(user.id, guildId) {
+                renderReplyNameIfCurrent(this, context)
+            }
+            ensureGuildRolesFetched(guildId) {
+                renderReplyNameIfCurrent(this, context)
+            }
         }
 
         patcher.after<WidgetChatListAdapterItemMessage>(
@@ -159,18 +164,35 @@ class ModernUserStyles : Plugin() {
 
             val context = replyNameContexts[this] ?: return@after
             val nameView = readObject("replyName") as? TextView ?: return@after
-            val preserveName = context.member.hasCleanNick()
-            renderUserName(
-                nameView,
-                context.userId,
-                if (preserveName) null else displayNameFor(context.userId, context.user),
-                styleFor(context.userId, context.user),
-                roles.forMember(context.member),
-                context.guildId,
-                preserveName,
-                fetchAsync = false,
-            )
+            renderReplyName(nameView, context)
         }
+    }
+
+    private fun renderReplyNameIfCurrent(
+        item: WidgetChatListAdapterItemMessage,
+        context: ReplyNameContext,
+    ) {
+        if (replyNameContexts[item] != context) return
+        val nameView = item.readObject("replyName") as? TextView ?: return
+        renderReplyName(nameView, context)
+    }
+
+    private fun renderReplyName(
+        nameView: TextView,
+        context: ReplyNameContext,
+    ) {
+        val member = context.member ?: context.guildId?.let { guild -> StoreStream.getGuilds().getMember(guild, context.userId) }
+        val preserveName = member.hasCleanNick()
+        renderUserName(
+            nameView,
+            context.userId,
+            if (preserveName) null else displayNameFor(context.userId, context.user),
+            styleFor(context.userId, context.user),
+            roles.forMember(member),
+            context.guildId,
+            preserveName,
+            fetchAsync = false,
+        )
     }
 
     private fun patchMemberList() {

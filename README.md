@@ -9,7 +9,7 @@ My Aliucord plugins for legacy Discord Android `126.21` / `126021`.
 Backport of gradient user roles & custom display names features from DiscordRN.
 
 - Global display names where legacy Discord still shows usernames.
-- Display-name fonts from Discord's WOFF2 font assets.
+- Display-name fonts from bundled Discord font assets.
 - Gradient and holographic role colors from modern role payloads.
 - Role color precedence based on the user's highest colored role.
 - Settings toggles for patched surfaces.
@@ -25,12 +25,6 @@ Backport of Discord message bookmarks and reminders.
 - In-app reminder notices while Aliucord is open and Android notifications while it is not.
 
 ## Build
-
-Initialize submodules before building:
-
-```powershell
-git submodule update --init --recursive
-```
 
 Build all plugins:
 
@@ -61,8 +55,6 @@ A push to `main` builds every plugin and publishes the generated zips plus `upda
 ## Notes
 
 These plugins target Aliucord on Discord Android `126021`. They use Aliucord patching APIs and Discord's existing authenticated REST/Gateway state where available; they do not copy Discord web client code.
-
-ModernUserStyles compiles the WOFF2 decoder from the `khoben/woff2-android` submodule during Gradle builds. Native libraries are only packaged into the generated plugin zip.
 
 ## License
 

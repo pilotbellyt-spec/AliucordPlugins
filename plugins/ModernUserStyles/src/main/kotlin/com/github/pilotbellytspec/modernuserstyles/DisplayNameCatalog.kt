@@ -66,13 +66,17 @@ object DisplayNameCatalog {
     }
 
     fun zipFontPath(fontId: Int?): String? = when (fontId) {
-        Font.CHERRY_BOMB -> "modern_user_styles/fonts/cherrybombone-400-normal.woff2"
-        Font.CHICLE -> "modern_user_styles/fonts/chicle-400-normal.woff2"
-        Font.MUSEO_MODERNO -> "modern_user_styles/fonts/museomoderno-500-medium.woff2"
-        Font.NEO_CASTEL -> "modern_user_styles/fonts/neocastel-400-normal.woff2"
-        Font.PIXELIFY -> "modern_user_styles/fonts/pixelifysans-400-normal.woff2"
-        Font.SINISTRE -> "modern_user_styles/fonts/sinistre-400-normal.woff2"
-        Font.ZILLA_SLAB -> "modern_user_styles/fonts/zillaslab-600-semibold.woff2"
+        Font.BANGERS -> "modern_user_styles/fonts/Bangers-Regular.ttf"
+        Font.BIO_RHYME -> "modern_user_styles/fonts/BioRhyme-Regular.ttf"
+        Font.CHERRY_BOMB -> "modern_user_styles/fonts/CherryBombOne-Regular.ttf"
+        Font.CHICLE -> "modern_user_styles/fonts/Chicle-Regular.ttf"
+        Font.COMPAGNON -> "modern_user_styles/fonts/Compagnon-Medium.otf"
+        Font.MUSEO_MODERNO -> "modern_user_styles/fonts/MuseoModerno-Regular.ttf"
+        Font.NEO_CASTEL -> "modern_user_styles/fonts/NeoCastel.otf"
+        Font.PIXELIFY -> "modern_user_styles/fonts/PixelifySans-Regular.otf"
+        Font.RIBES -> "modern_user_styles/fonts/Ribes-Black.otf"
+        Font.SINISTRE -> "modern_user_styles/fonts/Sinistre-Bold.otf"
+        Font.ZILLA_SLAB -> "modern_user_styles/fonts/ZillaSlab-SemiBold.ttf"
         else -> null
     }
 

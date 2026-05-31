@@ -136,6 +136,7 @@ class ModernUserStyles : Plugin() {
         ) {
             if (!settings.getBool("chatNames", true)) return@before
 
+            replyNameContexts.remove(this)
             val entry = it.args[0] as MessageEntry
             val replyData = entry.replyData ?: return@before
             if (replyData.messageState !is StoreMessageReplies.MessageState.Loaded) return@before
@@ -144,7 +145,7 @@ class ModernUserStyles : Plugin() {
             val user = refEntry.message.author
             val guildId = refEntry.author?.guildId ?: entry.author?.guildId
             val member = refEntry.author ?: guildId?.let { guild -> StoreStream.getGuilds().getMember(guild, user.id) }
-            val context = ReplyNameContext(user.id, user, member, guildId)
+            val context = ReplyNameContext(user.id, user, member, guildId, refEntry.message.id)
             replyNameContexts[this] = context
             ensureProfileFetched(user.id, guildId) {
                 renderReplyNameIfCurrent(this, context)
@@ -162,7 +163,10 @@ class ModernUserStyles : Plugin() {
         ) {
             if (!settings.getBool("chatNames", true)) return@after
 
-            val context = replyNameContexts[this] ?: return@after
+            val context = replyNameContexts[this]?.copy(
+                configuredName = (it.args[0] as? String).cleanName(),
+            ) ?: return@after
+            replyNameContexts[this] = context
             val nameView = readObject("replyName") as? TextView ?: return@after
             renderReplyName(nameView, context)
         }
@@ -172,9 +176,10 @@ class ModernUserStyles : Plugin() {
         item: WidgetChatListAdapterItemMessage,
         context: ReplyNameContext,
     ) {
-        if (replyNameContexts[item] != context) return
+        val current = replyNameContexts[item] ?: return
+        if (!current.isSameReply(context)) return
         val nameView = item.readObject("replyName") as? TextView ?: return
-        renderReplyName(nameView, context)
+        renderReplyName(nameView, current)
     }
 
     private fun renderReplyName(
@@ -182,11 +187,13 @@ class ModernUserStyles : Plugin() {
         context: ReplyNameContext,
     ) {
         val member = context.member ?: context.guildId?.let { guild -> StoreStream.getGuilds().getMember(guild, context.userId) }
-        val preserveName = member.hasCleanNick()
+        val username = usernameFor(context.userId, context.user)
+        val displayName = displayNameFor(context.userId, context.user)
+        val preserveName = shouldPreserveReplyConfiguredName(context.configuredName, username, displayName, member)
         renderUserName(
             nameView,
             context.userId,
-            if (preserveName) null else displayNameFor(context.userId, context.user),
+            if (preserveName) context.configuredName else displayName,
             styleFor(context.userId, context.user),
             roles.forMember(member),
             context.guildId,
@@ -695,7 +702,23 @@ class ModernUserStyles : Plugin() {
         val user: Any?,
         val member: GuildMember?,
         val guildId: Long?,
+        val repliedMessageId: Long,
+        val configuredName: String? = null,
     )
+
+    private fun ReplyNameContext.isSameReply(other: ReplyNameContext): Boolean =
+        userId == other.userId && repliedMessageId == other.repliedMessageId
+
+    private fun shouldPreserveReplyConfiguredName(
+        configuredName: String?,
+        username: String?,
+        displayName: String?,
+        member: GuildMember?,
+    ): Boolean {
+        val configured = configuredName.cleanName() ?: return member.hasCleanNick()
+        if (member.hasCleanNick()) return true
+        return configured != username.cleanName() && configured != displayName.cleanName()
+    }
 
     private fun ensureProfileFetched(userId: Long, guildId: Long? = null, onLoaded: (() -> Unit)? = null) {
         val realGuildId = guildId?.takeIf { it != 0L }

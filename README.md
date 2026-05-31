@@ -24,6 +24,15 @@ Backport of Discord message bookmarks and reminders.
 - Bookmarks view from Recent Mentions.
 - In-app reminder notices while Aliucord is open and Android notifications while it is not.
 
+### IgnoreFeature
+
+Backport of Discord's ignore user feature.
+
+- Adds Ignore and Unignore to the profile action menu.
+- Syncs with Discord's standard relationship ignore API.
+- Restores ignored users from startup gateway state.
+- Collapses ignored users' messages with Discord's blocked-message UI.
+
 ## Build
 
 Build all plugins:
@@ -37,6 +46,7 @@ Build one plugin:
 ```powershell
 .\gradlew.bat --no-configuration-cache :plugins:ModernUserStyles:make
 .\gradlew.bat --no-configuration-cache :plugins:MessageBookmarks:make
+.\gradlew.bat --no-configuration-cache :plugins:IgnoreFeature:make
 ```
 
 Plugin zips are written to each plugin's `build/outputs` folder.
@@ -46,6 +56,7 @@ Plugin zips are written to each plugin's `build/outputs` folder.
 ```powershell
 .\gradlew.bat --no-configuration-cache :plugins:ModernUserStyles:deployWithAdb
 .\gradlew.bat --no-configuration-cache :plugins:MessageBookmarks:deployWithAdb
+.\gradlew.bat --no-configuration-cache :plugins:IgnoreFeature:deployWithAdb
 ```
 
 ## GitHub Actions

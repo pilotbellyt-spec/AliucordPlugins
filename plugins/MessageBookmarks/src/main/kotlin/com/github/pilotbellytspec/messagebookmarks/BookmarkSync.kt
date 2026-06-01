@@ -11,7 +11,7 @@ import java.util.TimeZone
 
 class BookmarkSync(
     private val settings: SettingsAPI,
-    private val store: BookmarkStore,
+    private val stash: BookmarkStore,
     private val toast: (String) -> Unit,
 ) {
     val enabled: Boolean
@@ -20,90 +20,93 @@ class BookmarkSync(
     fun fetch() {
         if (!enabled) return
         Utils.threadPool.execute {
-            runCatching {
+            try {
                 Http.Request.newDiscordRNRequest("/users/@me/saved-messages").execute().use { response ->
-                    val root = JSONObject(response.text())
-                    val results = root.optJSONArray("results") ?: return@use
-                    var index = 0
-                    while (index < results.length()) {
-                        parseSavedMessage(results.optJSONObject(index))?.let(store::upsert)
-                        index++
+                    val savedMessages = JSONObject(response.text()).optJSONArray("results") ?: return@use
+                    for (index in 0 until savedMessages.length()) {
+                        parseSavedMessage(savedMessages.optJSONObject(index))?.let(stash::upsert)
                     }
                 }
-            }.onFailure { handleFailure("Could not load synced bookmarks", it) }
+            } catch (error: Throwable) {
+                syncToast("Could not load synced bookmarks", error)
+            }
         }
     }
 
     fun create(record: BookmarkRecord) {
         if (!enabled) return
         Utils.threadPool.execute {
-            runCatching {
-                val body = JSONObject()
-                record.dueAt?.let { body.put("due_at", isoDate(it)) }
+            try {
+                val payload = JSONObject()
+                record.dueAt?.let { payload.put("due_at", isoDate(it)) }
                 Http.Request.newDiscordRNRequest(
                     "/users/@me/saved-messages/${record.channelId}/${record.messageId}",
                     "PUT",
-                ).executeWithBody(body.toString()).use { it.assertOk() }
-            }.onFailure { handleFailure("Could not sync bookmark", it) }
+                ).executeWithBody(payload.toString()).use { it.assertOk() }
+            } catch (error: Throwable) {
+                syncToast("Could not sync bookmark", error)
+            }
         }
     }
 
     fun delete(channelId: Long, messageId: Long) {
         if (!enabled) return
         Utils.threadPool.execute {
-            runCatching {
+            try {
                 Http.Request.newDiscordRNRequest(
                     "/users/@me/saved-messages/$channelId/$messageId",
                     "DELETE",
                 ).execute().use { it.assertOk() }
-            }.onFailure { handleFailure("Could not sync bookmark removal", it) }
+            } catch (error: Throwable) {
+                syncToast("Could not sync bookmark removal", error)
+            }
         }
     }
 
     fun applyGatewayCreate(raw: JSONObject) {
-        parseSavedMessage(raw)?.let(store::upsert)
+        parseSavedMessage(raw)?.let(stash::upsert)
     }
 
     fun applyGatewayDelete(raw: JSONObject) {
-        val data = raw.optJSONObject("save_data") ?: raw
-        val channelId = data.optString("channel_id").toLongOrNull() ?: return
-        val messageId = data.optString("message_id").toLongOrNull() ?: return
-        store.remove(channelId, messageId)
+        val saveData = raw.optJSONObject("save_data") ?: raw
+        val channelId = saveData.optString("channel_id").toLongOrNull() ?: return
+        val messageId = saveData.optString("message_id").toLongOrNull() ?: return
+        stash.remove(channelId, messageId)
     }
 
-    private fun parseSavedMessage(root: JSONObject?): BookmarkRecord? {
-        root ?: return null
-        val message = root.optJSONObject("message")
-        val data = root.optJSONObject("save_data") ?: root
-        val channelId = data.optString("channel_id").toLongOrNull()
-            ?: message?.optString("channel_id")?.toLongOrNull()
+    private fun parseSavedMessage(savedMessage: JSONObject?): BookmarkRecord? {
+        savedMessage ?: return null
+        val messageJson = savedMessage.optJSONObject("message")
+        val saveData = savedMessage.optJSONObject("save_data") ?: savedMessage
+        val channelId = saveData.optString("channel_id").toLongOrNull()
+            ?: messageJson?.optString("channel_id")?.toLongOrNull()
             ?: return null
-        val messageId = data.optString("message_id").toLongOrNull()
-            ?: message?.optString("id")?.toLongOrNull()
+        val messageId = saveData.optString("message_id").toLongOrNull()
+            ?: messageJson?.optString("id")?.toLongOrNull()
             ?: return null
-        val author = message?.optJSONObject("author")
+        val author = messageJson?.optJSONObject("author")
         return BookmarkRecord(
             channelId = channelId,
             messageId = messageId,
-            guildId = data.optString("guild_id").toLongOrNull(),
-            authorId = data.optString("author_id").toLongOrNull() ?: author?.optString("id")?.toLongOrNull(),
-            authorName = author?.optString("global_name").clean() ?: author?.optString("username").clean(),
-            channelName = data.optJSONObject("channel_summary")?.optString("name").clean(),
-            content = message?.optString("content").clean()
-                ?: data.optJSONObject("message_summary")?.optString("content").clean(),
-            savedAt = parseIso(data.optString("saved_at")) ?: System.currentTimeMillis(),
-            dueAt = parseIso(data.optString("due_at")),
+            guildId = saveData.optString("guild_id").toLongOrNull(),
+            authorId = saveData.optString("author_id").toLongOrNull() ?: author?.optString("id")?.toLongOrNull(),
+            authorName = author?.optString("global_name").usableText() ?: author?.optString("username").usableText(),
+            channelName = saveData.optJSONObject("channel_summary")?.optString("name").usableText(),
+            content = messageJson?.optString("content").usableText()
+                ?: saveData.optJSONObject("message_summary")?.optString("content").usableText(),
+            savedAt = parseIso(saveData.optString("saved_at")) ?: System.currentTimeMillis(),
+            dueAt = parseIso(saveData.optString("due_at")),
         )
     }
 
-    private fun handleFailure(prefix: String, error: Throwable) {
-        val message = error.message.orEmpty()
-        val text = when {
-            "30074" in message -> "Bookmarks are full (200 max)."
-            "401" in message || "403" in message || "404" in message -> "$prefix. Discord rejected Sync Mode, so try Local Mode."
+    private fun syncToast(prefix: String, error: Throwable) {
+        val detail = error.message.orEmpty()
+        val toastText = when {
+            "30074" in detail -> "Bookmarks are full (200 max)."
+            "401" in detail || "403" in detail || "404" in detail -> "$prefix. Discord rejected Sync Mode, so try Local Mode."
             else -> prefix
         }
-        Utils.mainThread.post { toast(text) }
+        Utils.mainThread.post { toast(toastText) }
     }
 
     companion object {
@@ -119,13 +122,17 @@ class BookmarkSync(
         }
 
         fun parseIso(value: String?): Long? {
-            val clean = value.clean() ?: return null
+            val clean = value.usableText() ?: return null
             return synchronized(isoFormat) {
-                runCatching { isoFormat.parse(clean)?.time }.getOrNull()
+                try {
+                    isoFormat.parse(clean)?.time
+                } catch (_: Throwable) {
+                    null
+                }
             }
         }
     }
 }
 
-private fun String?.clean(): String? =
+private fun String?.usableText(): String? =
     this?.trim()?.takeIf { it.isNotEmpty() && it != "null" }

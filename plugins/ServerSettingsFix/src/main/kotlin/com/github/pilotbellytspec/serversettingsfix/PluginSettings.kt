@@ -1,4 +1,4 @@
-package com.github.pilotbellytspec.ignorefeature
+package com.github.pilotbellytspec.serversettingsfix
 
 import android.os.Bundle
 import android.view.View
@@ -16,14 +16,16 @@ class PluginSettings(private val settings: SettingsAPI) : BottomSheet() {
         val sheetContext = requireContext()
 
         addView(TextView(sheetContext, null, 0, R.i.UiKit_Settings_Item_Header).apply {
-            text = "Ignore Feature"
+            text = "ServerSettingsFix"
         })
         addView(TextView(sheetContext, null, 0, R.i.UiKit_Settings_Item_SubText).apply {
-            text = "Ignore users without blocking them. Synced users stay hidden in chat."
+            text = "Keeps bans, audit logs, and invites usable on old Discord builds."
         })
 
-        switchRow("Collapse messages", "Show ignored users as a collapsed row.", "collapseIgnoredMessages", true)
-        switchRow("Sync ignores", "Keep ignored users in sync with Discord.", "syncIgnoreState", true)
+        switchRow("Paginated bans", "Use the current bans endpoint.", "fixBans", true)
+        switchRow("Audit log route", "Use the current audit-log endpoint.", "fixAuditLog", true)
+        switchRow("30-minute invites", "Set generated invite links to expire in 30 minutes.", "shortInvites", true)
+        switchRow("Failure toasts", "Show a short message when a server settings request fails.", "showToasts", true)
     }
 
     private fun switchRow(title: String, subtitle: String, key: String, default: Boolean) {
@@ -32,8 +34,8 @@ class PluginSettings(private val settings: SettingsAPI) : BottomSheet() {
             isChecked = settings.getBool(key, default)
             setOnCheckedListener {
                 settings.setBool(key, it)
-                PluginManager.stopPlugin("IgnoreFeature")
-                PluginManager.startPlugin("IgnoreFeature")
+                PluginManager.stopPlugin("ServerSettingsFix")
+                PluginManager.startPlugin("ServerSettingsFix")
             }
         })
     }

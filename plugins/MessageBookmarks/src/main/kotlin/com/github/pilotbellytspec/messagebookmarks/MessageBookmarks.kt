@@ -51,10 +51,10 @@ class MessageBookmarks : Plugin() {
         const val EXTRA_REMINDER_MESSAGE_ID = "messagebookmarks.message_id"
     }
 
-    private lateinit var store: BookmarkStore
-    private lateinit var sync: BookmarkSync
+    private lateinit var stash: BookmarkStore
+    private lateinit var cloudStash: BookmarkSync
     private lateinit var appContext: Context
-    private var active = false
+    private var running = false
     private var appForeground = true
     private var lifecycleCallbacks: Application.ActivityLifecycleCallbacks? = null
     private var application: Application? = null
@@ -62,11 +62,11 @@ class MessageBookmarks : Plugin() {
     private val actionReminderId = View.generateViewId()
     private val actionCompleteId = View.generateViewId()
     private val menuBookmarksId = View.generateViewId()
-    private val reminderRunnables = mutableMapOf<String, Runnable>()
-    private val bookmarkMode = WeakHashMap<WidgetUserMentions, Boolean>()
-    private val renderVersions = WeakHashMap<WidgetUserMentions, Int>()
-    private val lastMentionsModel = WeakHashMap<WidgetUserMentions, WidgetUserMentions.Model>()
-    private val messageCache = mutableMapOf<String, Message>()
+    private val reminderTicks = mutableMapOf<String, Runnable>()
+    private val bookmarkTabs = WeakHashMap<WidgetUserMentions, Boolean>()
+    private val mentionCycles = WeakHashMap<WidgetUserMentions, Int>()
+    private val mentionBackups = WeakHashMap<WidgetUserMentions, WidgetUserMentions.Model>()
+    private val seenMessages = mutableMapOf<String, Message>()
 
     private val getActionsBinding = WidgetChatListActions::class.java
         .getDeclaredMethod("getBinding")
@@ -77,25 +77,25 @@ class MessageBookmarks : Plugin() {
     }
 
     override fun start(context: Context) {
-        active = true
+        running = true
         appContext = context.applicationContext
-        store = BookmarkStore(settings)
-        sync = BookmarkSync(settings, store) { Utils.showToast(it) }
-        store.listen { scheduleReminders() }
+        stash = BookmarkStore(settings)
+        cloudStash = BookmarkSync(settings, stash) { Utils.showToast(it) }
+        stash.listen { scheduleReminders() }
 
-        registerAppLifecycle(context)
-        patchMessageActions(context)
-        patchRecentMentions(context)
-        registerGatewayEvents()
-        sync.fetch()
+        watchAppState(context)
+        msgMenu(context)
+        recentMentions(context)
+        gateway()
+        cloudStash.fetch()
         scheduleReminders()
     }
 
     override fun stop(context: Context) {
-        active = false
+        running = false
         patcher.unpatchAll()
-        reminderRunnables.values.forEach { Utils.mainThread.removeCallbacks(it) }
-        reminderRunnables.clear()
+        reminderTicks.values.forEach { Utils.mainThread.removeCallbacks(it) }
+        reminderTicks.clear()
         lifecycleCallbacks?.let { callbacks ->
             application?.unregisterActivityLifecycleCallbacks(callbacks)
         }
@@ -103,7 +103,7 @@ class MessageBookmarks : Plugin() {
         application = null
     }
 
-    private fun registerAppLifecycle(context: Context) {
+    private fun watchAppState(context: Context) {
         val app = context.applicationContext as? Application ?: return
         application = app
         lifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
@@ -135,7 +135,7 @@ class MessageBookmarks : Plugin() {
         app.registerActivityLifecycleCallbacks(lifecycleCallbacks)
     }
 
-    private fun patchMessageActions(context: Context) {
+    private fun msgMenu(context: Context) {
         val actionsContainerId = Utils.getResId("dialog_chat_actions_container", "id")
         val starIcon = ContextCompat.getDrawable(context, R.e.ic_star_24dp)?.mutate()
         val clockIcon = ContextCompat.getDrawable(context, R.e.ic_clock_24dp)?.mutate()
@@ -146,14 +146,14 @@ class MessageBookmarks : Plugin() {
             View::class.java,
             Bundle::class.java,
         ) {
-            val root = (it.args[0] as NestedScrollView).getChildAt(0) as LinearLayout
-            val ctx = root.context
-            val tint = ColorCompat.getThemedColor(ctx, R.b.colorInteractiveNormal)
+            val actionList = (it.args[0] as NestedScrollView).getChildAt(0) as LinearLayout
+            val actionContext = actionList.context
+            val tint = ColorCompat.getThemedColor(actionContext, R.b.colorInteractiveNormal)
             listOf(starIcon, clockIcon, doneIcon).forEach { icon -> icon?.setTint(tint) }
 
-            root.addView(actionItem(ctx, actionBookmarkId, "Bookmark Message", starIcon), 1)
-            root.addView(actionItem(ctx, actionReminderId, "Create Reminder", clockIcon), 2)
-            root.addView(actionItem(ctx, actionCompleteId, "Complete Reminder", doneIcon), 3)
+            actionList.addView(actionItem(actionContext, actionBookmarkId, "Bookmark Message", starIcon), 1)
+            actionList.addView(actionItem(actionContext, actionReminderId, "Create Reminder", clockIcon), 2)
+            actionList.addView(actionItem(actionContext, actionCompleteId, "Complete Reminder", doneIcon), 3)
         }
 
         patcher.after<WidgetChatListActions>(
@@ -161,44 +161,44 @@ class MessageBookmarks : Plugin() {
             WidgetChatListActions.Model::class.java,
         ) {
             val sheet = this
-            val model = it.args[0] as WidgetChatListActions.Model
-            val message = model.message
+            val actionModel = it.args[0] as WidgetChatListActions.Model
+            val selectedMessage = actionModel.message
             val binding = getActionsBinding.invoke(sheet) as WidgetChatListActionsBinding
-            val root = binding.root.findViewById<LinearLayout>(actionsContainerId)
-            val record = store.get(message.channelId, message.id)
+            val actionList = binding.root.findViewById<LinearLayout>(actionsContainerId)
+            val bookmark = stash.get(selectedMessage.channelId, selectedMessage.id)
 
-            root.findViewById<TextView>(actionBookmarkId)?.apply {
-                text = if (record == null) "Bookmark Message" else "Remove Bookmark"
+            actionList.findViewById<TextView>(actionBookmarkId)?.apply {
+                text = if (bookmark == null) "Bookmark Message" else "Remove Bookmark"
                 setOnClickListener {
-                    if (record == null) {
-                        val saved = store.upsert(message)
-                        messageCache[saved.key] = message
-                        sync.create(saved)
+                    if (bookmark == null) {
+                        val saved = stash.upsert(selectedMessage)
+                        seenMessages[saved.key] = selectedMessage
+                        cloudStash.create(saved)
                         Utils.showToast("Bookmarked message")
                     } else {
-                        remove(record)
+                        remove(bookmark)
                     }
                     sheet.dismiss()
                 }
             }
-            root.findViewById<TextView>(actionReminderId)?.apply {
-                text = if (record?.dueAt == null) "Create Reminder" else "Edit Reminder"
+            actionList.findViewById<TextView>(actionReminderId)?.apply {
+                text = if (bookmark?.dueAt == null) "Create Reminder" else "Edit Reminder"
                 setOnClickListener {
-                    showReminderPicker(sheet.requireContext(), message, record)
+                    showReminderPicker(sheet.requireContext(), selectedMessage, bookmark)
                     sheet.dismiss()
                 }
             }
-            root.findViewById<TextView>(actionCompleteId)?.apply {
-                visibility = if (record?.dueAt == null) View.GONE else View.VISIBLE
+            actionList.findViewById<TextView>(actionCompleteId)?.apply {
+                visibility = if (bookmark?.dueAt == null) View.GONE else View.VISIBLE
                 setOnClickListener {
-                    remove(record!!)
+                    remove(bookmark!!)
                     sheet.dismiss()
                 }
             }
         }
     }
 
-    private fun patchRecentMentions(context: Context) {
+    private fun recentMentions(context: Context) {
         val mentionsMenuId = Utils.getResId("menu_user_mentions", "menu")
 
         patcher.after<AppFragment>(
@@ -214,51 +214,51 @@ class MessageBookmarks : Plugin() {
             val toolbarView = it.result as? androidx.appcompat.widget.Toolbar ?: return@after
             if (toolbarView.menu.findItem(menuBookmarksId) != null) return@after
 
-            val item = toolbarView.menu.add(0, menuBookmarksId, 0, "Bookmarks")
-            item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            val star = toolbarView.menu.add(0, menuBookmarksId, 0, "Bookmarks")
+            star.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
             ContextCompat.getDrawable(context, R.e.ic_star_24dp)?.mutate()?.let { icon ->
                 icon.setTint(ColorCompat.getThemedColor(toolbarView.context, R.b.colorInteractiveNormal))
-                item.icon = icon
+                star.icon = icon
             }
-            item.setOnMenuItemClickListener {
-                val isBookmarks = bookmarkMode[this] == true
-                bookmarkMode[this] = !isBookmarks
+            star.setOnMenuItemClickListener {
+                val isBookmarks = bookmarkTabs[this] == true
+                bookmarkTabs[this] = !isBookmarks
                 nextRenderVersion(this)
                 if (isBookmarks) {
                     restoreRecentMentions(this)
                 } else {
-                    showBookmarks(this)
+                    openShelf(this)
                 }
                 true
             }
         }
 
         patcher.after<WidgetUserMentions>("configureUI", WidgetUserMentions.Model::class.java) {
-            val model = it.args[0] as WidgetUserMentions.Model
-            lastMentionsModel[this] = model
-            if (bookmarkMode[this] == true) {
-                showBookmarks(this)
+            val mentionsModel = it.args[0] as WidgetUserMentions.Model
+            mentionBackups[this] = mentionsModel
+            if (bookmarkTabs[this] == true) {
+                openShelf(this)
             }
         }
     }
 
     private fun nextRenderVersion(fragment: WidgetUserMentions): Int {
-        val version = (renderVersions[fragment] ?: 0) + 1
-        renderVersions[fragment] = version
+        val version = (mentionCycles[fragment] ?: 0) + 1
+        mentionCycles[fragment] = version
         return version
     }
 
     private fun restoreRecentMentions(fragment: WidgetUserMentions) {
-        val model = lastMentionsModel[fragment]
-        if (model != null) {
-            runCatching {
+        val recentModel = mentionBackups[fragment]
+        if (recentModel != null) {
+            try {
                 WidgetUserMentions::class.java
                     .getDeclaredMethod("configureUI", WidgetUserMentions.Model::class.java)
                     .apply { isAccessible = true }
-                    .invoke(fragment, model)
-            }.onFailure {
-                mentionsAdapter(fragment)?.setData(model)
-                fragment.setActionBarSubtitle(model.guildName ?: "All Servers")
+                    .invoke(fragment, recentModel)
+            } catch (_: Throwable) {
+                mentionsAdapter(fragment)?.setData(recentModel)
+                fragment.setActionBarSubtitle(recentModel.guildName ?: "All Servers")
             }
             fragment.setActionBarTitle("Recent Mentions")
         } else {
@@ -267,13 +267,13 @@ class MessageBookmarks : Plugin() {
         }
     }
 
-    private fun showBookmarks(fragment: WidgetUserMentions) {
+    private fun openShelf(fragment: WidgetUserMentions) {
         val renderVersion = nextRenderVersion(fragment)
         val adapter = mentionsAdapter(fragment) ?: return
-        val messages = store.all().mapNotNull { record ->
-            messageCache[record.key]
-                ?: StoreStream.getMessages().getMessage(record.channelId, record.messageId)?.also { message ->
-                    messageCache[record.key] = message
+        val messages = stash.all().mapNotNull { bookmark ->
+            seenMessages[bookmark.key]
+                ?: StoreStream.getMessages().getMessage(bookmark.channelId, bookmark.messageId)?.also { message ->
+                    seenMessages[bookmark.key] = message
                 }
         }
 
@@ -294,23 +294,23 @@ class MessageBookmarks : Plugin() {
         modelObservable
             .Z(1)
             .subscribe {
-                if (bookmarkMode[fragment] != true || renderVersions[fragment] != renderVersion) return@subscribe
-                val model = this
+                if (bookmarkTabs[fragment] != true || mentionCycles[fragment] != renderVersion) return@subscribe
+                val tabModel = this
                 adapter.setData(
-                    model.copy(
-                        model.userId,
-                        model.channelId,
-                        model.guild,
-                        model.guildId,
-                        model.channelNames,
-                        model.oldestMessageId,
-                        model.list,
-                        model.myRoleIds,
-                        model.newMessagesMarkerMessageId,
-                        model.isSpoilerClickAllowed,
-                        model.animateEmojis,
+                    tabModel.copy(
+                        tabModel.userId,
+                        tabModel.channelId,
+                        tabModel.guild,
+                        tabModel.guildId,
+                        tabModel.channelNames,
+                        tabModel.oldestMessageId,
+                        tabModel.list,
+                        tabModel.myRoleIds,
+                        tabModel.newMessagesMarkerMessageId,
+                        tabModel.isSpoilerClickAllowed,
+                        tabModel.animateEmojis,
                         "Bookmarks",
-                        model.selectedTab,
+                        tabModel.selectedTab,
                     ),
                 )
                 fragment.setActionBarTitle("Bookmarks")
@@ -319,16 +319,16 @@ class MessageBookmarks : Plugin() {
     }
 
     private fun mentionsAdapter(fragment: WidgetUserMentions): WidgetChatListAdapter? =
-        fragment.readObject("mentionsAdapter") as? WidgetChatListAdapter
+        fragment.poke("mentionsAdapter") as? WidgetChatListAdapter
 
-    private fun actionItem(ctx: Context, id: Int, label: String, icon: android.graphics.drawable.Drawable?) =
-        TextView(ctx, null, 0, R.i.UiKit_Settings_Item_Icon).apply {
+    private fun actionItem(context: Context, id: Int, label: String, icon: android.graphics.drawable.Drawable?) =
+        TextView(context, null, 0, R.i.UiKit_Settings_Item_Icon).apply {
             this.id = id
             text = label
             setCompoundDrawablesRelativeWithIntrinsicBounds(icon, null, null, null)
         }
 
-    private fun showReminderPicker(ctx: Context, message: Message?, existing: BookmarkRecord?) {
+    private fun showReminderPicker(context: Context, selectedMessage: Message?, savedBookmark: BookmarkRecord?) {
         val now = System.currentTimeMillis()
         val options = arrayOf("30 minutes", "1 hour", "4 hours", "Tomorrow morning", "Custom")
         val times = arrayOf(
@@ -343,26 +343,26 @@ class MessageBookmarks : Plugin() {
                 set(Calendar.MILLISECOND, 0)
             }.timeInMillis,
         )
-        android.app.AlertDialog.Builder(ctx)
+        android.app.AlertDialog.Builder(context)
             .setTitle("Remind Me")
             .setItems(options) { _, which ->
                 if (which == options.lastIndex) {
-                    pickCustomReminder(ctx) { saveReminder(message, existing, it) }
+                    pickCustomReminder(context) { saveReminder(selectedMessage, savedBookmark, it) }
                 } else {
-                    saveReminder(message, existing, times[which])
+                    saveReminder(selectedMessage, savedBookmark, times[which])
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun pickCustomReminder(ctx: Context, onPicked: (Long) -> Unit) {
+    private fun pickCustomReminder(context: Context, onPicked: (Long) -> Unit) {
         val cal = Calendar.getInstance()
-        DatePickerDialog(ctx, { _, year, month, day ->
+        DatePickerDialog(context, { _, year, month, day ->
             cal.set(Calendar.YEAR, year)
             cal.set(Calendar.MONTH, month)
             cal.set(Calendar.DAY_OF_MONTH, day)
-            TimePickerDialog(ctx, { _, hour, minute ->
+            TimePickerDialog(context, { _, hour, minute ->
                 cal.set(Calendar.HOUR_OF_DAY, hour)
                 cal.set(Calendar.MINUTE, minute)
                 cal.set(Calendar.SECOND, 0)
@@ -372,89 +372,89 @@ class MessageBookmarks : Plugin() {
         }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
     }
 
-    private fun saveReminder(message: Message?, existing: BookmarkRecord?, dueAt: Long) {
-        val record = if (message != null) {
-            store.upsert(message, dueAt).also { messageCache[it.key] = message }
+    private fun saveReminder(selectedMessage: Message?, savedBookmark: BookmarkRecord?, dueAt: Long) {
+        val reminder = if (selectedMessage != null) {
+            stash.upsert(selectedMessage, dueAt).also { seenMessages[it.key] = selectedMessage }
         } else {
-            existing?.copy(dueAt = dueAt)?.also(store::upsert) ?: return
+            savedBookmark?.copy(dueAt = dueAt)?.also(stash::upsert) ?: return
         }
-        sync.create(record)
+        cloudStash.create(reminder)
         Utils.showToast("Reminder set for ${Date(dueAt)}")
     }
 
-    private fun remove(record: BookmarkRecord) {
-        store.remove(record.channelId, record.messageId)
-        sync.delete(record.channelId, record.messageId)
-        Utils.showToast(if (record.dueAt == null) "Removed bookmark" else "Completed reminder")
+    private fun remove(bookmark: BookmarkRecord) {
+        stash.remove(bookmark.channelId, bookmark.messageId)
+        cloudStash.delete(bookmark.channelId, bookmark.messageId)
+        Utils.showToast(if (bookmark.dueAt == null) "Removed bookmark" else "Completed reminder")
     }
 
     private fun scheduleReminders() {
-        reminderRunnables.values.forEach { Utils.mainThread.removeCallbacks(it) }
-        reminderRunnables.clear()
+        reminderTicks.values.forEach { Utils.mainThread.removeCallbacks(it) }
+        reminderTicks.clear()
         if (!settings.getBool("showReminderNotifications", true)) return
 
         val now = System.currentTimeMillis()
-        store.all()
+        stash.all()
             .filter { it.dueAt != null && it.dueAt > now }
-            .forEach { record ->
+            .forEach { bookmark ->
                 val runnable = Runnable {
-                    if (!active || store.get(record.channelId, record.messageId)?.dueAt != record.dueAt) return@Runnable
-                    showReminderNotification(record)
+                    if (!running || stash.get(bookmark.channelId, bookmark.messageId)?.dueAt != bookmark.dueAt) return@Runnable
+                    ring(bookmark)
                 }
-                reminderRunnables[record.key] = runnable
-                Utils.mainThread.postDelayed(runnable, record.dueAt!! - now)
+                reminderTicks[bookmark.key] = runnable
+                Utils.mainThread.postDelayed(runnable, bookmark.dueAt!! - now)
             }
     }
 
-    private fun showReminderNotification(record: BookmarkRecord) {
+    private fun ring(bookmark: BookmarkRecord) {
         if (appForeground) {
             NotificationsAPI.display(
                 NotificationData()
                     .setTitle("Reminder")
-                    .setSubtitle(record.authorName ?: "Saved message")
-                    .setBody(record.content ?: "Tap to jump to the saved message.")
+                    .setSubtitle(bookmark.authorName ?: "Saved message")
+                    .setBody(bookmark.content ?: "Tap to jump to the saved message.")
                     .setAutoDismissPeriodSecs(10)
                     .setOnClick {
-                        StoreStream.getMessagesLoader().jumpToMessage(record.channelId, record.messageId)
+                        StoreStream.getMessagesLoader().jumpToMessage(bookmark.channelId, bookmark.messageId)
                     },
-                record.channelId,
+                bookmark.channelId,
             )
         } else {
-            showAndroidReminderNotification(record)
+            showAndroidReminderNotification(bookmark)
         }
     }
 
     @Suppress("LaunchActivityFromNotification")
-    private fun showAndroidReminderNotification(record: BookmarkRecord) {
-        val title = record.authorName ?: "Saved message"
-        val body = record.content ?: "Tap to jump to the saved message."
+    private fun showAndroidReminderNotification(bookmark: BookmarkRecord) {
+        val title = bookmark.authorName ?: "Saved message"
+        val notificationText = bookmark.content ?: "Tap to jump to the saved message."
         val launchIntent = appContext.packageManager.getLaunchIntentForPackage(appContext.packageName)
             ?: Intent()
         launchIntent
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra(EXTRA_REMINDER_TAP, true)
-            .putExtra(EXTRA_REMINDER_CHANNEL_ID, record.channelId)
-            .putExtra(EXTRA_REMINDER_MESSAGE_ID, record.messageId)
+            .putExtra(EXTRA_REMINDER_CHANNEL_ID, bookmark.channelId)
+            .putExtra(EXTRA_REMINDER_MESSAGE_ID, bookmark.messageId)
 
         val pendingIntent = PendingIntent.getActivity(
             appContext,
-            record.key.hashCode(),
+            bookmark.key.hashCode(),
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(appContext, NotificationClient.NOTIF_GENERAL)
             .setSmallIcon(R.e.ic_clock_24dp)
             .setContentTitle("Reminder")
-            .setContentText(body)
-            .setSubText(record.channelName ?: title)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setContentText(notificationText)
+            .setSubText(bookmark.channelName ?: title)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(notificationText))
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setLocalOnly(true)
             .setOnlyAlertOnce(true)
             .build()
 
-        NotificationManagerCompat.from(appContext).notify(record.key.hashCode(), notification)
+        NotificationManagerCompat.from(appContext).notify(bookmark.key.hashCode(), notification)
     }
 
     private fun handleReminderTap(intent: Intent?) {
@@ -467,41 +467,44 @@ class MessageBookmarks : Plugin() {
         if (channelId == 0L || messageId == 0L) return
 
         Utils.mainThread.postDelayed({
-            if (active) StoreStream.getMessagesLoader().jumpToMessage(channelId, messageId)
+            if (running) StoreStream.getMessagesLoader().jumpToMessage(channelId, messageId)
         }, 750)
     }
 
-    private fun registerGatewayEvents() {
+    private fun gateway() {
         GatewayAPI.onRawEvent(listOf("SAVED_MESSAGE_CREATE", "SAVED_MESSAGE_DELETE")) { raw ->
-            if (!active || !sync.enabled) return@onRawEvent
-            runCatching {
-                val root = JSONObject(raw)
-                val data = root.optJSONObject("d") ?: return@runCatching
-                when (root.optString("t")) {
-                    "SAVED_MESSAGE_CREATE" -> sync.applyGatewayCreate(data)
-                    "SAVED_MESSAGE_DELETE" -> sync.applyGatewayDelete(data)
+            if (!running || !cloudStash.enabled) return@onRawEvent
+            try {
+                val gatewayEvent = JSONObject(raw)
+                val eventData = gatewayEvent.optJSONObject("d") ?: return@onRawEvent
+                when (gatewayEvent.optString("t")) {
+                    "SAVED_MESSAGE_CREATE" -> cloudStash.applyGatewayCreate(eventData)
+                    "SAVED_MESSAGE_DELETE" -> cloudStash.applyGatewayDelete(eventData)
                 }
-            }.onFailure {
-                logger.warn("Failed to handle saved-message gateway event", it)
+            } catch (error: Throwable) {
+                logger.warn("Saved-message gateway payload did not parse", error)
             }
         }
     }
 }
 
-private fun Any?.readObject(vararg names: String): Any? {
+private fun Any?.poke(vararg names: String): Any? {
     val target = this ?: return null
     names.forEach { name ->
         var cls: Class<*>? = target.javaClass
         while (cls != null) {
-            runCatching {
-                val field = cls!!.getDeclaredField(name).apply { isAccessible = true }
+            val currentClass = cls
+            try {
+                val field = currentClass.getDeclaredField(name).apply { isAccessible = true }
                 return field[target]
+            } catch (_: Throwable) {
             }
-            runCatching {
-                val method = cls!!.getDeclaredMethod(name).apply { isAccessible = true }
+            try {
+                val method = currentClass.getDeclaredMethod(name).apply { isAccessible = true }
                 return method.invoke(target)
+            } catch (_: Throwable) {
             }
-            cls = cls!!.superclass
+            cls = currentClass.superclass
         }
     }
     return null

@@ -1,37 +1,15 @@
-# AliucordPlugins
+# Aliucord plugins
 
-My Aliucord plugins for legacy Discord Android `126.21` / `126021`.
+A small set of Aliucord plugins for Discord Android `126.21` / `126021`.
 
 ## Plugins
 
-### ModernUserStyles
-
-Backport of gradient user roles & custom display names features from DiscordRN.
-
-- Global display names where legacy Discord still shows usernames.
-- Display-name fonts from bundled Discord font assets.
-- Gradient and holographic role colors from modern role payloads.
-- Role color precedence based on the user's highest colored role.
-- Settings toggles for patched surfaces.
-
-### MessageBookmarks
-
-Backport of Discord message bookmarks and reminders.
-
-- Local bookmarks and reminders by default.
-- Optional sync mode for Discord's saved-message API if your account has access.
-- Bookmark/reminder actions in the message action sheet.
-- Bookmarks view from Recent Mentions.
-- In-app reminder notices while Aliucord is open and Android notifications while it is not.
-
-### IgnoreFeature
-
-Backport of Discord's ignore user feature.
-
-- Adds Ignore and Unignore to the profile action menu.
-- Syncs with Discord's standard relationship ignore API.
-- Restores ignored users from startup gateway state.
-- Collapses ignored users' messages with Discord's blocked-message UI.
+| Plugin | What it does |
+| --- | --- |
+| ModernUserStyles | Gradient role colors and styled display names. |
+| MessageBookmarks | Bookmarks/reminders for messages. Has local mode and an optional sync mode. |
+| IgnoreFeature | Adds Ignore/Unignore to user profiles and hides ignored users in chat. |
+| ServerSettingsFix | Fixes a few broken server settings screens on 126021. |
 
 ## Build
 
@@ -47,9 +25,10 @@ Build one plugin:
 .\gradlew.bat --no-configuration-cache :plugins:ModernUserStyles:make
 .\gradlew.bat --no-configuration-cache :plugins:MessageBookmarks:make
 .\gradlew.bat --no-configuration-cache :plugins:IgnoreFeature:make
+.\gradlew.bat --no-configuration-cache :plugins:ServerSettingsFix:make
 ```
 
-Plugin zips are written to each plugin's `build/outputs` folder.
+The zip for each plugin ends up in that plugin's `build/outputs` folder.
 
 ## Deploy
 
@@ -57,15 +36,16 @@ Plugin zips are written to each plugin's `build/outputs` folder.
 .\gradlew.bat --no-configuration-cache :plugins:ModernUserStyles:deployWithAdb
 .\gradlew.bat --no-configuration-cache :plugins:MessageBookmarks:deployWithAdb
 .\gradlew.bat --no-configuration-cache :plugins:IgnoreFeature:deployWithAdb
+.\gradlew.bat --no-configuration-cache :plugins:ServerSettingsFix:deployWithAdb
 ```
 
 ## GitHub Actions
 
-A push to `main` builds every plugin and publishes the generated zips plus `updater.json` to the `builds` branch.
+`main` builds the plugins and updates the `builds` branch.
 
 ## Notes
 
-These plugins target Aliucord on Discord Android `126021`. They use Aliucord patching APIs and Discord's existing authenticated REST/Gateway state where available; they do not copy Discord web client code.
+These are for Aliucord on Discord Android `126021`. Some features call Discord's normal authenticated REST/Gateway routes when the old app has no local state for them.
 
 ## License
 

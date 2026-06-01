@@ -15,48 +15,48 @@ import com.lytefast.flexinput.R
 class PluginSettings(private val settings: SettingsAPI) : BottomSheet() {
     override fun onViewCreated(view: View, bundle: Bundle?) {
         super.onViewCreated(view, bundle)
-        val ctx = requireContext()
+        val sheetContext = requireContext()
 
-        addView(TextView(ctx, null, 0, R.i.UiKit_Settings_Item_Header).apply {
+        addView(TextView(sheetContext, null, 0, R.i.UiKit_Settings_Item_Header).apply {
             text = "Message Bookmarks"
         })
-        addView(TextView(ctx, null, 0, R.i.UiKit_Settings_Item_SubText).apply {
-            text = "Save messages for later, optionally sync them with Discord, and get reminder notifications."
+        addView(TextView(sheetContext, null, 0, R.i.UiKit_Settings_Item_SubText).apply {
+            text = "Bookmarks and reminders for messages."
         })
 
-        val radios = listOf(
-            Utils.createCheckedSetting(ctx, CheckedSetting.ViewType.RADIO, "Local Mode", "Stores bookmarks on this device only."),
-            Utils.createCheckedSetting(ctx, CheckedSetting.ViewType.RADIO, "Sync Mode", "Uses Discord's saved-message API if your account has access."),
+        val modeRows = listOf(
+            Utils.createCheckedSetting(sheetContext, CheckedSetting.ViewType.RADIO, "Local", "Stored on this device."),
+            Utils.createCheckedSetting(sheetContext, CheckedSetting.ViewType.RADIO, "Sync", "Use Discord saved messages when available."),
         )
-        val manager = RadioManager(radios)
-        val group = RadioGroup(ctx)
-        radios.forEachIndexed { index, radio ->
+        val radioManager = RadioManager(modeRows)
+        val modeBox = RadioGroup(sheetContext)
+        modeRows.forEachIndexed { index, radio ->
             radio.e {
                 settings.setInt("mode", index)
-                manager.a(radio)
-                restart()
+                radioManager.a(radio)
+                bounce()
             }
-            group.addView(radio)
-            if (index == settings.getInt("mode", BookmarkSync.MODE_LOCAL)) manager.a(radio)
+            modeBox.addView(radio)
+            if (index == settings.getInt("mode", BookmarkSync.MODE_LOCAL)) radioManager.a(radio)
         }
-        addView(group)
+        addView(modeBox)
 
-        addToggle("Bookmarks button", "Adds a Bookmarks button to Recent Mentions.", "showBookmarksButton", true)
-        addToggle("Reminder notifications", "Uses in-app notices while Aliucord is open and Android notifications while it is not.", "showReminderNotifications", true)
+        switchRow("Recent Mentions button", "Put Bookmarks beside the filter menu.", "showBookmarksButton", true)
+        switchRow("Notifications", "In-app while Aliucord is open, Android notification in background.", "showReminderNotifications", true)
     }
 
-    private fun addToggle(title: String, subtitle: String, key: String, default: Boolean) {
-        val ctx = requireContext()
-        addView(Utils.createCheckedSetting(ctx, CheckedSetting.ViewType.SWITCH, title, subtitle).apply {
+    private fun switchRow(title: String, subtitle: String, key: String, default: Boolean) {
+        val sheetContext = requireContext()
+        addView(Utils.createCheckedSetting(sheetContext, CheckedSetting.ViewType.SWITCH, title, subtitle).apply {
             isChecked = settings.getBool(key, default)
             setOnCheckedListener {
                 settings.setBool(key, it)
-                restart()
+                bounce()
             }
         })
     }
 
-    private fun restart() {
+    private fun bounce() {
         PluginManager.stopPlugin("MessageBookmarks")
         PluginManager.startPlugin("MessageBookmarks")
     }

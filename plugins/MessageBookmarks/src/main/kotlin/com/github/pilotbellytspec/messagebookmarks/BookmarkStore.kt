@@ -22,33 +22,37 @@ class BookmarkStore(private val settings: SettingsAPI) {
     fun contains(channelId: Long, messageId: Long): Boolean = get(channelId, messageId) != null
 
     fun upsert(message: Message, dueAt: Long? = null): BookmarkRecord {
-        val channel = runCatching { StoreStream.getChannels().getChannel(message.channelId) }.getOrNull()
-        val record = BookmarkRecord(
+        val channel = try {
+            StoreStream.getChannels().getChannel(message.channelId)
+        } catch (_: Throwable) {
+            null
+        }
+        val bookmark = BookmarkRecord(
             channelId = message.channelId,
             messageId = message.id,
             guildId = channel.readLong("guildId", "getGuildId", "i")?.takeIf { it != 0L },
             authorId = message.author?.id,
             authorName = message.author?.username,
             channelName = channel.readString("name", "getName", "p"),
-            content = message.content.clean(),
+            content = message.content.savedText(),
             savedAt = System.currentTimeMillis(),
             dueAt = dueAt,
         )
-        upsert(record)
-        return record
+        upsert(bookmark)
+        return bookmark
     }
 
     fun upsert(record: BookmarkRecord) {
-        val values = load().filterNot { it.key == record.key }.toMutableList()
-        values += record
-        save(values)
+        val savedBookmarks = load().filterNot { it.key == record.key }.toMutableList()
+        savedBookmarks += record
+        save(savedBookmarks)
     }
 
     fun setDueAt(channelId: Long, messageId: Long, dueAt: Long?) {
-        val values = load().map {
+        val savedBookmarks = load().map {
             if (it.channelId == channelId && it.messageId == messageId) it.copy(dueAt = dueAt) else it
         }
-        save(values)
+        save(savedBookmarks)
     }
 
     fun remove(channelId: Long, messageId: Long) {
@@ -56,24 +60,30 @@ class BookmarkStore(private val settings: SettingsAPI) {
     }
 
     private fun load(): List<BookmarkRecord> {
-        val raw = settings.getString(storageKey(), "[]")
-        return runCatching {
-            val array = JSONArray(raw)
-            List(array.length()) { index ->
-                array.getJSONObject(index).toRecord()
+        val json = settings.getString(storageKey(), "[]")
+        return try {
+            val savedBookmarks = JSONArray(json)
+            List(savedBookmarks.length()) { index ->
+                savedBookmarks.getJSONObject(index).toRecord()
             }
-        }.getOrDefault(emptyList())
+        } catch (_: Throwable) {
+            emptyList()
+        }
     }
 
-    private fun save(values: List<BookmarkRecord>) {
-        val array = JSONArray()
-        values.forEach { array.put(it.toJson()) }
-        settings.setString(storageKey(), array.toString())
+    private fun save(savedBookmarks: List<BookmarkRecord>) {
+        val json = JSONArray()
+        savedBookmarks.forEach { json.put(it.toJson()) }
+        settings.setString(storageKey(), json.toString())
         listeners.forEach { it() }
     }
 
     private fun storageKey(): String {
-        val userId = runCatching { StoreStream.getUsers().me.id }.getOrDefault(0L)
+        val userId = try {
+            StoreStream.getUsers().me.id
+        } catch (_: Throwable) {
+            0L
+        }
         return "savedMessages:$userId"
     }
 }
@@ -102,37 +112,40 @@ private fun JSONObject.toRecord() = BookmarkRecord(
 )
 
 private fun JSONObject.optCleanString(key: String): String? =
-    if (has(key) && !isNull(key)) optString(key).clean() else null
+    if (has(key) && !isNull(key)) optString(key).savedText() else null
 
-private fun String?.clean(): String? {
-    val value = this?.trim() ?: return null
-    return if (value.isEmpty() || value == "null") null else value
+private fun String?.savedText(): String? {
+    val cleanText = this?.trim() ?: return null
+    return if (cleanText.isEmpty() || cleanText == "null") null else cleanText
 }
 
 private fun Any?.readString(vararg names: String): String? =
-    readObject(*names) as? String
+    poke(*names) as? String
 
 private fun Any?.readLong(vararg names: String): Long? =
-    when (val value = readObject(*names)) {
-        is Long -> value
-        is Number -> value.toLong()
+    when (val reflectedValue = poke(*names)) {
+        is Long -> reflectedValue
+        is Number -> reflectedValue.toLong()
         else -> null
     }
 
-private fun Any?.readObject(vararg names: String): Any? {
+private fun Any?.poke(vararg names: String): Any? {
     val target = this ?: return null
     names.forEach { name ->
         var cls: Class<*>? = target.javaClass
         while (cls != null) {
-            runCatching {
-                val field = cls!!.getDeclaredField(name).apply { isAccessible = true }
+            val currentClass = cls
+            try {
+                val field = currentClass.getDeclaredField(name).apply { isAccessible = true }
                 return field[target]
+            } catch (_: Throwable) {
             }
-            runCatching {
-                val method = cls!!.getDeclaredMethod(name).apply { isAccessible = true }
+            try {
+                val method = currentClass.getDeclaredMethod(name).apply { isAccessible = true }
                 return method.invoke(target)
+            } catch (_: Throwable) {
             }
-            cls = cls!!.superclass
+            cls = currentClass.superclass
         }
     }
     return null

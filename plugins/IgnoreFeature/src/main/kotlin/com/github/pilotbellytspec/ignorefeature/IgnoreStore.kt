@@ -42,39 +42,45 @@ class IgnoreStore(private val settings: SettingsAPI) {
             .filter { it == GLOBAL_STORAGE_KEY || it.startsWith("$ACCOUNT_STORAGE_PREFIX:") }
             .ifEmpty { listOf(storageKey(), GLOBAL_STORAGE_KEY) }
 
-        val values = mutableSetOf<Long>()
+        val storedIds = mutableSetOf<Long>()
         keys.forEach { key ->
-            values += parseIds(settings.getString(key, "[]"))
+            storedIds += parseIds(settings.getString(key, "[]"))
         }
-        return values
+        return storedIds
     }
 
-    private fun parseIds(raw: String): Set<Long> {
-        return runCatching {
-            val array = JSONArray(raw)
-            val values = mutableSetOf<Long>()
-            for (index in 0 until array.length()) {
-                array.optString(index).toLongOrNull()?.let(values::add)
+    private fun parseIds(json: String): Set<Long> {
+        return try {
+            val savedIds = JSONArray(json)
+            val parsedIds = mutableSetOf<Long>()
+            for (index in 0 until savedIds.length()) {
+                savedIds.optString(index).toLongOrNull()?.let(parsedIds::add)
             }
-            values
-        }.getOrDefault(emptySet())
+            parsedIds
+        } catch (_: Throwable) {
+            emptySet()
+        }
     }
 
     private fun save() {
-        val array = JSONArray()
-        ignoredIds.sorted().forEach { array.put(it.toString()) }
-        val raw = array.toString()
-        settings.setString(GLOBAL_STORAGE_KEY, raw)
+        val savedIds = JSONArray()
+        ignoredIds.sorted().forEach { savedIds.put(it.toString()) }
+        val json = savedIds.toString()
+        settings.setString(GLOBAL_STORAGE_KEY, json)
         val accountKey = storageKey()
         if (accountKey != GLOBAL_STORAGE_KEY) {
-            settings.setString(accountKey, raw)
+            settings.setString(accountKey, json)
         }
         ignoredSubject.onNext(ignoredIds.toSet())
         listeners.forEach { it() }
     }
 
     private fun storageKey(): String {
-        val userId = runCatching { StoreStream.getUsers().me.id }.getOrDefault(0L)
+        val userId = try {
+            StoreStream.getUsers().me.id
+        } catch (_: Throwable) {
+            0L
+        }
         return if (userId == 0L) GLOBAL_STORAGE_KEY else "$ACCOUNT_STORAGE_PREFIX:$userId"
     }
 

@@ -14,11 +14,11 @@ class PluginSettings(private val settings: SettingsAPI) : BottomSheet() {
     override fun onViewCreated(view: View, bundle: Bundle?) {
         super.onViewCreated(view, bundle)
 
-        val ctx = requireContext()
+        val sheetContext = requireContext()
 
-        fun addToggle(title: String, subtext: String, key: String, default: Boolean = true) {
+        fun row(title: String, subtext: String, key: String, default: Boolean = true) {
             addView(
-                Utils.createCheckedSetting(ctx, CheckedSetting.ViewType.SWITCH, title, subtext).apply {
+                Utils.createCheckedSetting(sheetContext, CheckedSetting.ViewType.SWITCH, title, subtext).apply {
                     isChecked = settings.getBool(key, default)
                     setOnCheckedListener {
                         settings.setBool(key, it)
@@ -30,32 +30,32 @@ class PluginSettings(private val settings: SettingsAPI) : BottomSheet() {
         }
 
         addView(
-            TextView(ctx, null, 0, R.i.UiKit_Settings_Item_Header).apply {
+            TextView(sheetContext, null, 0, R.i.UiKit_Settings_Item_Header).apply {
                 text = "Modern User Styles"
             },
         )
         addView(
-            TextView(ctx, null, 0, R.i.UiKit_Settings_Item_SubText).apply {
-                text = "Shows modern gradient role colors and custom display names throughout Discord."
+            TextView(sheetContext, null, 0, R.i.UiKit_Settings_Item_SubText).apply {
+                text = "Modern display names and role colors in the places old Android misses."
             },
         )
 
-        addToggle("Display names", "Use global/display names where legacy Discord still shows usernames.", "displayNames")
-        addToggle("Display name styles", "Render display_name_styles font, colors, and effect IDs.", "displayNameStyles")
-        addToggle("Role gradients", "Render role colors.secondary_color and tertiary_color when available.", "roleGradients")
+        row("Display names", "Use server and global display names in username-only views.", "displayNames")
+        row("Name styles", "Use Discord's custom fonts, colors, and profile effects.", "displayNameStyles")
+        row("Role gradients", "Use modern secondary and tertiary role colors when present.", "roleGradients")
 
         addView(
-            TextView(ctx, null, 0, R.i.UiKit_Settings_Item_Header).apply {
-                text = "Locations"
+            TextView(sheetContext, null, 0, R.i.UiKit_Settings_Item_Header).apply {
+                text = "Places"
             },
         )
-        addToggle("Chat names", "Style message author names.", "chatNames")
-        addToggle("Member list", "Style names in the channel member list.", "memberList")
-        addToggle("Profiles", "Style profile primary names.", "profileNames")
-        addToggle("Mentions", "Style rendered user mentions.", "mentions")
-        addToggle("Autocomplete", "Style mention autocomplete names and input spans.", "autocomplete")
-        addToggle("DM list", "Style private-channel recipient names.", "dmList")
-        addToggle("Voice names", "Style voice and stage user names.", "voiceNames")
-        addToggle("Reaction users", "Style names in reaction user lists.", "reactionUsers")
+        row("Chat names", "Message author names.", "chatNames")
+        row("Member list", "Names in the channel member list.", "memberList")
+        row("Profiles", "Primary names on profile sheets.", "profileNames")
+        row("Mentions", "Rendered user mentions.", "mentions")
+        row("Autocomplete", "Mention autocomplete names and input spans.", "autocomplete")
+        row("DM list", "Private-channel recipient names.", "dmList")
+        row("Voice names", "Voice and stage user names.", "voiceNames")
+        row("Reaction users", "Names in reaction user lists.", "reactionUsers")
     }
 }

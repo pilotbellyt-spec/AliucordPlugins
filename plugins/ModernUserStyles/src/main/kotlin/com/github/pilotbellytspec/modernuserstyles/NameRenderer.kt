@@ -373,19 +373,19 @@ class NameRenderer(private val context: Context) {
         effectId: Int,
     ): List<ProfileEffectSpan> {
         val spans = mutableListOf<ProfileEffectSpan>()
-        var start = -1
-        var index = 0
-        while (index <= label.length) {
-            val isBoundary = index == label.length || label[index].isWhitespace()
-            if (!isBoundary && start == -1) {
-                start = index
-            } else if (isBoundary && start != -1) {
+        var wordStart = -1
+        var charIndex = 0
+        while (charIndex <= label.length) {
+            val isBoundary = charIndex == label.length || label[charIndex].isWhitespace()
+            if (!isBoundary && wordStart == -1) {
+                wordStart = charIndex
+            } else if (isBoundary && wordStart != -1) {
                 val span = ProfileEffectSpan(colors, effectId)
-                styled.setSpan(span, start, index, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                styled.setSpan(span, wordStart, charIndex, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 spans.add(span)
-                start = -1
+                wordStart = -1
             }
-            index++
+            charIndex++
         }
 
         if (spans.isEmpty() && label.isNotEmpty()) {
@@ -506,10 +506,10 @@ class NameRenderer(private val context: Context) {
         renderTokens[textView] == token
 
     private fun currentProfileEffectSpans(textView: TextView, label: String): List<ProfileEffectSpan> {
-        val text = textView.text
-        if (text.toString() != label) return emptyList()
-        return (text as? Spanned)
-            ?.getSpans(0, text.length, ProfileEffectSpan::class.java)
+        val currentText = textView.text
+        if (currentText.toString() != label) return emptyList()
+        return (currentText as? Spanned)
+            ?.getSpans(0, currentText.length, ProfileEffectSpan::class.java)
             ?.toList()
             .orEmpty()
     }

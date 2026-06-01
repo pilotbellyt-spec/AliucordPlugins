@@ -1,5 +1,5 @@
 version = "0.0.1"
-description = "Backport of Discord message bookmarks and reminders"
+description = "Message bookmarks and reminders"
 
 aliucord {
     changelog.set(

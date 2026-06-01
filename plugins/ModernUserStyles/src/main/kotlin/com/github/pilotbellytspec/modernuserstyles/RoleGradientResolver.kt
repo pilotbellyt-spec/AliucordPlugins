@@ -75,10 +75,10 @@ class RoleGradientResolver {
         role.javaClass.declaredFields.forEach { field ->
             runCatching {
                 field.isAccessible = true
-                val value = field[role] ?: return@forEach
-                if (value.javaClass.name != "com.discord.api.role.GuildRoleColors") return@forEach
+                val reflectedColors = field[role] ?: return@forEach
+                if (reflectedColors.javaClass.name != "com.discord.api.role.GuildRoleColors") return@forEach
 
-                val primary = value.readInt("primaryColor") ?: role.color
+                val primary = reflectedColors.readInt("primaryColor") ?: role.color
                 if (primary == 0) return@forEach
 
                 return RoleGradient(
@@ -96,9 +96,9 @@ class RoleGradientResolver {
     private fun Any.readInt(name: String): Int? =
         runCatching {
             val field = javaClass.getDeclaredField(name).apply { isAccessible = true }
-            when (val value = field[this]) {
-                is Int -> value
-                is Number -> value.toInt()
+            when (val reflectedValue = field[this]) {
+                is Int -> reflectedValue
+                is Number -> reflectedValue.toInt()
                 else -> null
             }
         }.getOrNull()

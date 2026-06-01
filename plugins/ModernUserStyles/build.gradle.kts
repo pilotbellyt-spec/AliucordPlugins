@@ -3,7 +3,7 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 version = "0.0.32"
-description = "Backport of gradient user roles & custom display names features from DiscordRN"
+description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
     val output = layout.buildDirectory.file("outputs/ModernUserStyles.zip").get().asFile
@@ -112,7 +112,7 @@ aliucord {
 
         # 0.0.13
         * Prepare the plugin for public repository review.
-        * Remove debug slash commands and noisy profile logging.
+        * Remove old slash commands and noisy profile logging.
         * Update package, author metadata, and plugin description.
 
         # 0.0.12

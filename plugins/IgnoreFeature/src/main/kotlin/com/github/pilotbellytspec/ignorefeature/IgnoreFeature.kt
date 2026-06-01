@@ -33,61 +33,61 @@ import rx.functions.FuncN
 @AliucordPlugin(requiresRestart = false)
 @Suppress("unused")
 class IgnoreFeature : Plugin() {
-    private lateinit var store: IgnoreStore
-    private lateinit var sync: IgnoreSync
-    private var active = false
+    private lateinit var quietList: IgnoreStore
+    private lateinit var relationshipSync: IgnoreSync
+    private var running = false
 
     init {
         settingsTab = SettingsTab(PluginSettings::class.java, SettingsTab.Type.BOTTOM_SHEET).withArgs(settings)
     }
 
     override fun start(context: Context) {
-        active = true
-        store = IgnoreStore(settings)
-        sync = IgnoreSync(store) { Utils.showToast(it) }
-        store.listen { markRelationshipsChanged() }
+        running = true
+        quietList = IgnoreStore(settings)
+        relationshipSync = IgnoreSync(quietList) { Utils.showToast(it) }
+        quietList.listen { markRelationshipsChanged() }
 
-        patchUserActionsDialog()
-        patchBlockedRelationshipsObservable()
-        patchChatBlockedRelationships()
-        registerGatewayEvents()
+        userActions()
+        blockedRelationshipStream()
+        chatModel()
+        gateway()
 
         if (settings.getBool("syncIgnoreState", true)) {
-            sync.fetch()
+            relationshipSync.fetch()
         }
     }
 
     override fun stop(context: Context) {
-        active = false
+        running = false
         patcher.unpatchAll()
     }
 
-    private fun patchUserActionsDialog() {
+    private fun userActions() {
         patcher.after<UserActionsDialog>("onViewBound", View::class.java) {
             val dialog = it.thisObject as UserActionsDialog
             val binding = dialog.binding()
-            val root = binding.a
-            val item = root.findViewWithTag<TextView>(IGNORE_ITEM_TAG) ?: createIgnoreItem(root)
-            if (item.parent == null) {
-                val insertIndex = root.indexOfChild(binding.c) + 1
-                root.addView(item, insertIndex)
+            val actionList = binding.a
+            val ignoreRow = actionList.findViewWithTag<TextView>(IGNORE_ITEM_TAG) ?: createIgnoreItem(actionList)
+            if (ignoreRow.parent == null) {
+                val insertIndex = actionList.indexOfChild(binding.c) + 1
+                actionList.addView(ignoreRow, insertIndex)
             }
 
             val userId = dialog.userId()
-            item.setOnClickListener {
-                val ignored = store.contains(userId)
-                item.isEnabled = false
+            ignoreRow.setOnClickListener {
+                val alreadyIgnored = quietList.contains(userId)
+                ignoreRow.isEnabled = false
                 if (settings.getBool("syncIgnoreState", true)) {
-                    sync.setIgnored(userId, !ignored) {
-                        item.isEnabled = true
+                    relationshipSync.setIgnored(userId, !alreadyIgnored) {
+                        ignoreRow.isEnabled = true
                         dialog.dismiss()
-                        Utils.showToast(if (ignored) "User unignored." else "User ignored.")
+                        Utils.showToast(if (alreadyIgnored) "User unignored." else "User ignored.")
                     }
                 } else {
-                    store.set(userId, !ignored)
-                    item.isEnabled = true
+                    quietList.set(userId, !alreadyIgnored)
+                    ignoreRow.isEnabled = true
                     dialog.dismiss()
-                    Utils.showToast(if (ignored) "User unignored." else "User ignored.")
+                    Utils.showToast(if (alreadyIgnored) "User unignored." else "User ignored.")
                 }
             }
         }
@@ -98,7 +98,7 @@ class IgnoreFeature : Plugin() {
         }
     }
 
-    private fun patchChatBlockedRelationships() {
+    private fun chatModel() {
         if (!settings.getBool("collapseIgnoredMessages", true)) return
 
         WidgetChatListModelMessages.Companion::class.java.getDeclaredMethod(
@@ -114,7 +114,7 @@ class IgnoreFeature : Plugin() {
             Map::class.java,
             Boolean::class.javaPrimitiveType,
             Boolean::class.javaPrimitiveType,
-            java.lang.Long::class.java,
+            Long::class.javaObjectType,
             Boolean::class.javaPrimitiveType,
             Boolean::class.javaPrimitiveType,
             Boolean::class.javaPrimitiveType,
@@ -139,7 +139,7 @@ class IgnoreFeature : Plugin() {
             Map::class.java,
             Boolean::class.javaPrimitiveType!!,
             Boolean::class.javaPrimitiveType!!,
-            java.lang.Long::class.java,
+            Long::class.javaObjectType,
             Boolean::class.javaPrimitiveType!!,
             Boolean::class.javaPrimitiveType!!,
             Boolean::class.javaPrimitiveType!!,
@@ -150,11 +150,11 @@ class IgnoreFeature : Plugin() {
             Boolean::class.javaPrimitiveType!!,
             Boolean::class.javaPrimitiveType!!,
         ) {
-            val ignored = store.all()
+            val ignored = quietList.all()
             if (ignored.isEmpty()) return@before
             @Suppress("UNCHECKED_CAST")
-            val existing = it.args[3] as? Map<Long, Int> ?: return@before
-            val merged = existing.toMutableMap()
+            val nativeRelationships = it.args[3] as? Map<Long, Int> ?: return@before
+            val merged = nativeRelationships.toMutableMap()
             ignored.forEach { userId ->
                 if (merged[userId] != RELATIONSHIP_BLOCKED) {
                     merged[userId] = RELATIONSHIP_BLOCKED
@@ -164,7 +164,7 @@ class IgnoreFeature : Plugin() {
         }
     }
 
-    private fun patchBlockedRelationshipsObservable() {
+    private fun blockedRelationshipStream() {
         if (!settings.getBool("collapseIgnoredMessages", true)) return
 
         patcher.after<StoreUserRelationships>("observeForType", Int::class.javaPrimitiveType!!) {
@@ -174,7 +174,7 @@ class IgnoreFeature : Plugin() {
 
             @Suppress("UNCHECKED_CAST")
             val original = it.result as? Observable<Map<Long, Int>> ?: return@after
-            val ignored = store.observe().G { ids ->
+            val ignored = quietList.observe().G { ids ->
                 ids.associateWith { RELATIONSHIP_BLOCKED }
             }
 
@@ -197,20 +197,20 @@ class IgnoreFeature : Plugin() {
         }
     }
 
-    private fun registerGatewayEvents() {
+    private fun gateway() {
         GatewayAPI.onRawEvent(listOf("READY", "CONNECTION_OPEN", "RELATIONSHIP_ADD", "RELATIONSHIP_UPDATE", "RELATIONSHIP_REMOVE")) { raw ->
-            if (!active || !settings.getBool("syncIgnoreState", true)) return@onRawEvent
-            runCatching {
-                val root = JSONObject(raw)
-                val data = root.optJSONObject("d") ?: return@runCatching
-                when (root.optString("t")) {
-                    "READY", "CONNECTION_OPEN" -> sync.applyConnectionOpen(data)
+            if (!running || !settings.getBool("syncIgnoreState", true)) return@onRawEvent
+            try {
+                val event = JSONObject(raw)
+                val payload = event.optJSONObject("d") ?: return@onRawEvent
+                when (event.optString("t")) {
+                    "READY", "CONNECTION_OPEN" -> relationshipSync.applyConnectionOpen(payload)
                     "RELATIONSHIP_ADD", "RELATIONSHIP_UPDATE", "RELATIONSHIP_REMOVE" -> {
-                        sync.applyRelationshipEvent(data, root.optString("t") == "RELATIONSHIP_REMOVE")
+                        relationshipSync.applyRelationshipEvent(payload, event.optString("t") == "RELATIONSHIP_REMOVE")
                     }
                 }
-            }.onFailure {
-                logger.warn("Failed to handle ignore relationship event", it)
+            } catch (error: Throwable) {
+                logger.warn("Ignore gateway payload did not parse", error)
             }
         }
     }
@@ -224,18 +224,19 @@ class IgnoreFeature : Plugin() {
     }
 
     private fun updateIgnoreItem(dialog: UserActionsDialog) {
-        val item = dialog.binding().a.findViewWithTag<TextView>(IGNORE_ITEM_TAG) ?: return
+        val ignoreRow = dialog.binding().a.findViewWithTag<TextView>(IGNORE_ITEM_TAG) ?: return
         val userId = dialog.userId()
-        val ignored = store.contains(userId)
-        item.text = if (ignored) "Unignore" else "Ignore"
-        item.visibility = if (userId == StoreStream.getUsers().me.id) View.GONE else View.VISIBLE
+        val alreadyIgnored = quietList.contains(userId)
+        ignoreRow.text = if (alreadyIgnored) "Unignore" else "Ignore"
+        ignoreRow.visibility = if (userId == StoreStream.getUsers().me.id) View.GONE else View.VISIBLE
     }
 
     private fun markRelationshipsChanged() {
-        runCatching {
+        try {
             StoreStream.getDispatcherYesThisIsIntentional().schedule {
                 StoreStream.getUserRelationships().markChanged()
             }
+        } catch (_: Throwable) {
         }
     }
 
@@ -248,27 +249,30 @@ class IgnoreFeature : Plugin() {
     }
 
     private fun Any?.readLong(vararg names: String): Long? =
-        when (val value = readObject(*names)) {
-            is Long -> value
-            is Number -> value.toLong()
+        when (val reflectedValue = peek(*names)) {
+            is Long -> reflectedValue
+            is Number -> reflectedValue.toLong()
             else -> null
         }
 
-    private fun Any?.readObject(vararg names: String): Any? {
+    private fun Any?.peek(vararg names: String): Any? {
         val target = this ?: return null
         names.forEach { name ->
-            var cls: Class<*>? = target.javaClass
-            while (cls != null) {
-                runCatching {
-                    val field = cls!!.getDeclaredField(name).apply { isAccessible = true }
-                    return field[target]
-                }
-                runCatching {
-                    val method = cls!!.getDeclaredMethod(name).apply { isAccessible = true }
-                    return method.invoke(target)
-                }
-                cls = cls!!.superclass
+        var cls: Class<*>? = target.javaClass
+        while (cls != null) {
+            val klass = cls
+            try {
+                val field = klass.getDeclaredField(name).apply { isAccessible = true }
+                return field[target]
+            } catch (_: Throwable) {
             }
+            try {
+                val method = klass.getDeclaredMethod(name).apply { isAccessible = true }
+                return method.invoke(target)
+            } catch (_: Throwable) {
+            }
+            cls = klass.superclass
+        }
         }
         return null
     }

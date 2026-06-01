@@ -9,7 +9,7 @@ A small set of Aliucord plugins for Discord Android `126.21` / `126021`.
 | ModernUserStyles | Gradient role colors and styled display names. |
 | MessageBookmarks | Bookmarks/reminders for messages. Has local mode and an optional sync mode. |
 | IgnoreFeature | Adds Ignore/Unignore to user profiles and hides ignored users in chat. |
-| ServerSettingsFix | Fixes a few broken server settings screens on 126021. |
+| ServerSettingsFix | Fixes a few broken server settings screens on Aliucord. |
 
 ## Build
 

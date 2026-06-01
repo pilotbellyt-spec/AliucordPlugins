@@ -28,6 +28,7 @@ import com.discord.widgets.chat.input.autocomplete.UserAutocompletable
 import com.discord.widgets.chat.input.autocomplete.adapter.AutocompleteItemViewHolder
 import com.discord.widgets.chat.input.models.MentionInputModel
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemMessage
+import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemPrivateChannelStart
 import com.discord.widgets.chat.list.entries.ChatListEntry
 import com.discord.widgets.chat.list.entries.MessageEntry
 import com.discord.widgets.chat.managereactions.ManageReactionsResultsAdapter
@@ -38,6 +39,7 @@ import com.discord.widgets.voice.fullscreen.stage.AudienceViewHolder
 import com.discord.widgets.voice.fullscreen.stage.SpeakerViewHolder
 import com.discord.widgets.voice.fullscreen.stage.StageCallItem
 import com.discord.widgets.voice.sheet.CallParticipantsAdapter
+import com.discord.views.ToolbarTitleLayout
 import de.robv.android.xposed.XC_MethodHook
 import kotlin.Function0
 import org.json.JSONArray
@@ -76,6 +78,8 @@ class ModernUserStyles : Plugin() {
         patchMentions()
         patchAutocomplete()
         patchDmList()
+        patchDmHeaders()
+        patchToolbarTitle()
         patchVoiceNames()
         patchReactionUsers()
         patchSettingsAccount()
@@ -103,13 +107,14 @@ class ModernUserStyles : Plugin() {
             val member = entry.author
             val nameView = itemView.findViewById<TextView>(nameId)
             val guildId = member?.guildId
-            val preserveName = member.hasCleanNick()
+            val configuredName = nameView?.text?.toString().cleanName()
+            val preserveName = shouldPreserveConfiguredName(configuredName, user.id, user, member)
             ensureGuildRolesFetched(guildId) {
                 if (renderedUserIds[nameView] == user.id) {
                     renderUserName(
                         nameView,
                         user.id,
-                        if (preserveName) null else displayNameFor(user.id, user),
+                        if (preserveName) configuredName else displayNameFor(user.id, user),
                         styleFor(user.id, user),
                         roles.forMember(member),
                         guildId,
@@ -120,7 +125,7 @@ class ModernUserStyles : Plugin() {
             renderUserName(
                 nameView,
                 user.id,
-                if (preserveName) null else displayNameFor(user.id, user),
+                if (preserveName) configuredName else displayNameFor(user.id, user),
                 styleFor(user.id, user),
                 roles.forMember(member),
                 guildId,
@@ -216,28 +221,35 @@ class ModernUserStyles : Plugin() {
             val usernameView = memberListUsernameView(this) ?: itemView.findViewById<TextView>(nameId)
             val guildId = item.guildId ?: StoreStream.getGuildSelected().selectedGuildId
             val member = StoreStream.getGuilds().getMember(guildId, item.userId)
+            val useDisplayStyleColors = isSelectedPrivateChannel()
+            val configuredName = item.name.cleanName() ?: usernameView?.let { view ->
+                if (view is TextView) view.text?.toString().cleanName()
+                else usernameViewNameText(view)?.text?.toString().cleanName()
+            }
             ensureGuildRolesFetched(guildId) {
                 val refreshedMember = StoreStream.getGuilds().getMember(guildId, item.userId)
-                val preserveName = refreshedMember.hasCleanNick()
+                val preserveName = !useDisplayStyleColors && shouldPreserveConfiguredName(configuredName, item.userId, null, refreshedMember)
                 renderUserNameViews(
                     usernameView,
                     item.userId,
-                    if (preserveName) null else displayNameFor(item.userId, null),
+                    if (preserveName) configuredName else displayNameFor(item.userId, null),
                     styleFor(item.userId, null),
                     roles.forMember(refreshedMember),
                     guildId,
                     preserveName,
+                    useDisplayStyleColors = useDisplayStyleColors,
                 )
             }
-            val preserveName = member.hasCleanNick()
+            val preserveName = !useDisplayStyleColors && shouldPreserveConfiguredName(configuredName, item.userId, null, member)
             renderUserNameViews(
                 usernameView,
                 item.userId,
-                if (preserveName) null else displayNameFor(item.userId, null),
+                if (preserveName) configuredName else displayNameFor(item.userId, null),
                 styleFor(item.userId, null),
                 roles.forMember(member),
                 guildId,
                 preserveName,
+                useDisplayStyleColors = useDisplayStyleColors,
             )
         }
     }
@@ -250,17 +262,18 @@ class ModernUserStyles : Plugin() {
         roleGradient: RoleGradient?,
         guildId: Long?,
         preserveExistingNameOnRefresh: Boolean = false,
+        useDisplayStyleColors: Boolean = false,
     ) {
         when (root) {
             is TextView -> {
                 if (root.text?.toString()?.trim()?.isNotEmpty() == true) {
-                    renderUserName(root, userId, label, style, roleGradient, guildId, preserveExistingNameOnRefresh)
+                    renderUserName(root, userId, label, style, roleGradient, guildId, preserveExistingNameOnRefresh, useDisplayStyleColors = useDisplayStyleColors)
                 }
             }
             is android.view.ViewGroup -> {
                 val usernameText = usernameViewNameText(root)
                 if (usernameText != null) {
-                    renderUserName(usernameText, userId, label, style, roleGradient, guildId, preserveExistingNameOnRefresh)
+                    renderUserName(usernameText, userId, label, style, roleGradient, guildId, preserveExistingNameOnRefresh, useDisplayStyleColors = useDisplayStyleColors)
                     return
                 }
 
@@ -277,10 +290,11 @@ class ModernUserStyles : Plugin() {
                             roleGradient,
                             guildId,
                             preserveExistingNameOnRefresh,
+                            useDisplayStyleColors = useDisplayStyleColors,
                         )
                         applied = true
                     } else if (child is android.view.ViewGroup) {
-                        renderUserNameViews(child, userId, if (applied) null else label, style, roleGradient, guildId, preserveExistingNameOnRefresh)
+                        renderUserNameViews(child, userId, if (applied) null else label, style, roleGradient, guildId, preserveExistingNameOnRefresh, useDisplayStyleColors)
                     }
                     index++
                 }
@@ -453,14 +467,138 @@ class ModernUserStyles : Plugin() {
                 ?: item.channel.z().firstOrNull()
                 ?: return@after
             val storeUser = StoreStream.getUsers().users[recipient.id]
+            val nameView = itemView.findViewById<TextView>(nameId)
+            val currentName = nameView?.text?.toString().cleanName()
 
-            renderUserName(
-                itemView.findViewById(nameId),
+            renderUserNameDrawable(
+                nameView,
                 recipient.id,
-                displayNameFor(recipient.id, recipient),
+                displayNameFor(recipient.id, recipient) ?: currentName,
                 styleFor(recipient.id, storeUser ?: recipient),
                 null,
+                preserveExistingNameOnRefresh = currentName != null,
             )
+        }
+    }
+
+    private fun patchDmHeaders() {
+        if (!settings.getBool("dmList", true)) return
+
+        val headerId = Utils.getResId("chat_list_adapter_item_private_channel_start_header", "id")
+        patcher.after<WidgetChatListAdapterItemPrivateChannelStart>(
+            "onConfigure",
+            Int::class.java,
+            ChatListEntry::class.java,
+        ) {
+            val header = itemView.findViewById<TextView>(headerId) ?: return@after
+            styleCurrentPrivateRecipient(header, allowMultiline = true)
+        }
+    }
+
+    private fun patchToolbarTitle() {
+        if (!settings.getBool("dmList", true)) return
+
+        patcher.after<ToolbarTitleLayout>(
+            "a",
+            CharSequence::class.java,
+            Int::class.javaObjectType,
+            Int::class.javaObjectType,
+        ) {
+            styleCurrentPrivateRecipient(title, resetWhenNotMatched = true)
+        }
+    }
+
+    private fun styleCurrentPrivateRecipient(
+        textView: TextView?,
+        allowMultiline: Boolean = false,
+        resetWhenNotMatched: Boolean = false,
+    ) {
+        if (textView == null) return
+        val channel = runCatching { StoreStream.getChannelsSelected().selectedChannel }.getOrNull()
+        if (channel == null) {
+            if (resetWhenNotMatched) renderer.resetTextView(textView)
+            return
+        }
+        val recipients = runCatching { channel.z() }.getOrNull()
+        if (recipients.isNullOrEmpty()) {
+            if (resetWhenNotMatched) renderer.resetTextView(textView)
+            return
+        }
+        val meId = StoreStream.getUsers().me.id
+        val recipient = recipients.firstOrNull { user -> user.id != meId } ?: recipients.firstOrNull() ?: return
+        if (recipients.size != 1) {
+            if (resetWhenNotMatched) renderer.resetTextView(textView)
+            return
+        }
+
+        val storeUser = StoreStream.getUsers().users[recipient.id]
+        val displayName = displayNameFor(recipient.id, recipient)
+        val username = usernameFor(recipient.id, recipient)
+        val currentText = textView.text?.toString().cleanName() ?: return
+        val channelName = channel.readString("name", "getName").cleanName()
+        val matchesRecipient = currentText == displayName.cleanName() ||
+            currentText == username.cleanName() ||
+            currentText == channelName
+        if (!matchesRecipient) {
+            if (resetWhenNotMatched) renderer.resetTextView(textView)
+            return
+        }
+
+        renderUserNameDrawable(
+            textView,
+            recipient.id,
+            displayName ?: currentText,
+            styleFor(recipient.id, storeUser ?: recipient),
+            null,
+            preserveExistingNameOnRefresh = true,
+            allowMultiline = allowMultiline,
+        )
+    }
+
+    private fun isSelectedPrivateChannel(): Boolean {
+        val channel = runCatching { StoreStream.getChannelsSelected().selectedChannel }.getOrNull() ?: return false
+        val recipients = runCatching { channel.z() }.getOrNull() ?: return false
+        return recipients.isNotEmpty()
+    }
+
+    private fun renderUserNameDrawable(
+        textView: TextView?,
+        userId: Long,
+        label: String?,
+        style: DisplayStyleData?,
+        roleGradient: RoleGradient?,
+        guildId: Long? = null,
+        preserveExistingNameOnRefresh: Boolean = false,
+        allowMultiline: Boolean = false,
+    ) {
+        if (textView != null) renderedUserIds[textView] = userId
+        renderer.renderTextViewAsDrawable(
+            textView,
+            label,
+            style,
+            roleGradient,
+            settings.getBool("displayNames", true),
+            settings.getBool("nameStyles", true),
+            settings.getBool("roleGradients", true),
+            allowDisplayStyleColors = true,
+            allowMultiline = allowMultiline,
+        )
+        if (textView != null) {
+            ensureProfileFetched(userId, guildId) {
+                if (renderedUserIds[textView] == userId) {
+                    renderer.renderTextViewAsDrawable(
+                        textView,
+                        if (preserveExistingNameOnRefresh) label else displayNameFor(userId, null),
+                        styleFor(userId, null),
+                        roleGradient,
+                        settings.getBool("displayNames", true),
+                        settings.getBool("nameStyles", true),
+                        settings.getBool("roleGradients", true),
+                        allowDisplayStyleColors = true,
+                        allowMultiline = allowMultiline,
+                    )
+                }
+            }
         }
     }
 
@@ -665,6 +803,8 @@ class ModernUserStyles : Plugin() {
         fetchAsync: Boolean = true,
         useDisplayStyleColors: Boolean = false,
         allowMultiline: Boolean = false,
+        allowReplacementEffects: Boolean = true,
+        preserveReplacementEffectText: Boolean = false,
     ) {
         if (textView != null && fetchAsync) {
             renderedUserIds[textView] = userId
@@ -681,6 +821,8 @@ class ModernUserStyles : Plugin() {
                         preserveExistingNameOnRefresh,
                         useDisplayStyleColors = useDisplayStyleColors,
                         allowMultiline = allowMultiline,
+                        allowReplacementEffects = allowReplacementEffects,
+                        preserveReplacementEffectText = preserveReplacementEffectText,
                     )
                 }
             }
@@ -699,6 +841,8 @@ class ModernUserStyles : Plugin() {
             settings.getBool("roleGradients", true),
             useDisplayStyleColors,
             allowMultiline,
+            allowReplacementEffects,
+            preserveReplacementEffectText,
         )
     }
 
@@ -723,6 +867,19 @@ class ModernUserStyles : Plugin() {
         val configured = configuredName.cleanName() ?: return member.hasCleanNick()
         if (member.hasCleanNick()) return true
         return configured != username.cleanName() && configured != displayName.cleanName()
+    }
+
+    private fun shouldPreserveConfiguredName(
+        configuredName: String?,
+        userId: Long,
+        fallbackUser: Any?,
+        member: GuildMember?,
+    ): Boolean {
+        val configured = configuredName.cleanName() ?: return member.hasCleanNick()
+        if (member.hasCleanNick()) return true
+        val username = usernameFor(userId, fallbackUser).cleanName()
+        val displayName = displayNameFor(userId, fallbackUser).cleanName()
+        return configured != username && configured != displayName
     }
 
     private fun ensureProfileFetched(userId: Long, guildId: Long? = null, onLoaded: (() -> Unit)? = null) {

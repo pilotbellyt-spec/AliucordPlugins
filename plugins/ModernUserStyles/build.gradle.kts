@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.31"
+version = "0.0.32"
 description = "Backport of gradient user roles & custom display names features from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,10 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.32
+        * Apply custom display-name colors and effects to DM headers, the top chat bar, the DM list, and private member-list names.
+        * Style the large "beginning of DM" header with the same custom name effect path used by profiles.
+
         # 0.0.31
         * Let long customized profile names wrap instead of collapsing to ellipses.
         * Split profile effect spans by word so styled names can line-break naturally.

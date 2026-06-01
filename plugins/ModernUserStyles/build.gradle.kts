@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.30"
+version = "0.0.31"
 description = "Backport of gradient user roles & custom display names features from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,10 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.31
+        * Let long customized profile names wrap instead of collapsing to ellipses.
+        * Split profile effect spans by word so styled names can line-break naturally.
+
         # 0.0.30
         * Fix reply names sometimes using stale user data from recycled chat rows.
         * Preserve server-specific reply names while still applying custom fonts and role colors.

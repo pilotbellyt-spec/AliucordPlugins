@@ -323,6 +323,7 @@ class ModernUserStyles : Plugin() {
                         guildId,
                         preserveName,
                         useDisplayStyleColors = true,
+                        allowMultiline = true,
                     )
                 }
             }
@@ -335,6 +336,7 @@ class ModernUserStyles : Plugin() {
                 guildId,
                 preserveName,
                 useDisplayStyleColors = true,
+                allowMultiline = true,
             )
         }
     }
@@ -662,6 +664,7 @@ class ModernUserStyles : Plugin() {
         preserveExistingNameOnRefresh: Boolean = false,
         fetchAsync: Boolean = true,
         useDisplayStyleColors: Boolean = false,
+        allowMultiline: Boolean = false,
     ) {
         if (textView != null && fetchAsync) {
             renderedUserIds[textView] = userId
@@ -677,6 +680,7 @@ class ModernUserStyles : Plugin() {
                         guildId,
                         preserveExistingNameOnRefresh,
                         useDisplayStyleColors = useDisplayStyleColors,
+                        allowMultiline = allowMultiline,
                     )
                 }
             }
@@ -694,6 +698,7 @@ class ModernUserStyles : Plugin() {
             settings.getBool("displayNameStyles", true),
             settings.getBool("roleGradients", true),
             useDisplayStyleColors,
+            allowMultiline,
         )
     }
 

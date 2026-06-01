@@ -32,6 +32,7 @@ class NameRenderer(private val context: Context) {
         allowNameStyle: Boolean,
         allowRoleGradient: Boolean,
         allowDisplayStyleColors: Boolean = false,
+        allowMultiline: Boolean = false,
     ) {
         if (textView == null) return
 
@@ -60,6 +61,11 @@ class NameRenderer(private val context: Context) {
         textView.letterSpacing = DisplayNameCatalog.letterSpacing(fontId, originalLetterSpacing)
         textView.setTextColor(Color.WHITE)
         textView.typeface = exactTypeface(fontId) ?: DisplayNameCatalog.typeface(fontId, originalTypefaces[textView])
+        if (allowMultiline) {
+            textView.setSingleLine(false)
+            textView.maxLines = 3
+            textView.ellipsize = null
+        }
         if (!useProfileEffect) {
             textView.text = nextLabel
         }
@@ -220,7 +226,7 @@ class NameRenderer(private val context: Context) {
                 val key = profileAnimationKey(label, colors, effectId)
                 if (hasDiscordProfileAnimation(effectId) &&
                     animationKeys[textView] == key &&
-                    currentProfileEffectSpan(textView, label) != null
+                    currentProfileEffectSpans(textView, label).isNotEmpty()
                 ) {
                     textView.invalidate()
                     return
@@ -228,16 +234,45 @@ class NameRenderer(private val context: Context) {
 
                 textView.setTextColor(Color.WHITE)
                 val styled = SpannableString(label)
-                val span = ProfileEffectSpan(colors, effectId)
-                styled.setSpan(span, 0, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                val spans = applyProfileEffectSpans(styled, label, colors, effectId)
                 textView.text = styled
-                maybeAnimateProfileEffect(textView, span, key, effectId)
+                maybeAnimateProfileEffect(textView, spans, key, effectId)
             }
         }
         textView.invalidate()
     }
 
-    private fun maybeAnimateProfileEffect(textView: TextView, span: ProfileEffectSpan, key: String, effectId: Int) {
+    private fun applyProfileEffectSpans(
+        styled: SpannableString,
+        label: String,
+        colors: List<Int>,
+        effectId: Int,
+    ): List<ProfileEffectSpan> {
+        val spans = mutableListOf<ProfileEffectSpan>()
+        var start = -1
+        var index = 0
+        while (index <= label.length) {
+            val isBoundary = index == label.length || label[index].isWhitespace()
+            if (!isBoundary && start == -1) {
+                start = index
+            } else if (isBoundary && start != -1) {
+                val span = ProfileEffectSpan(colors, effectId)
+                styled.setSpan(span, start, index, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                spans.add(span)
+                start = -1
+            }
+            index++
+        }
+
+        if (spans.isEmpty() && label.isNotEmpty()) {
+            val span = ProfileEffectSpan(colors, effectId)
+            styled.setSpan(span, 0, label.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            spans.add(span)
+        }
+        return spans
+    }
+
+    private fun maybeAnimateProfileEffect(textView: TextView, spans: List<ProfileEffectSpan>, key: String, effectId: Int) {
         if (!hasDiscordProfileAnimation(effectId)) {
             stopProfileAnimation(textView)
             return
@@ -252,7 +287,8 @@ class NameRenderer(private val context: Context) {
             duration = 4000L
             interpolator = LinearInterpolator()
             addUpdateListener { animation ->
-                span.animationProgress = animation.animatedValue as Float
+                val progress = animation.animatedValue as Float
+                spans.forEach { span -> span.animationProgress = progress }
                 textView.invalidate()
             }
             addListener(object : AnimatorListenerAdapter() {
@@ -287,12 +323,13 @@ class NameRenderer(private val context: Context) {
     private fun profileAnimationKey(label: String, colors: List<Int>, effectId: Int): String =
         "$label:$effectId:${colors.joinToString(",")}"
 
-    private fun currentProfileEffectSpan(textView: TextView, label: String): ProfileEffectSpan? {
+    private fun currentProfileEffectSpans(textView: TextView, label: String): List<ProfileEffectSpan> {
         val text = textView.text
-        if (text.toString() != label) return null
+        if (text.toString() != label) return emptyList()
         return (text as? Spanned)
             ?.getSpans(0, text.length, ProfileEffectSpan::class.java)
-            ?.firstOrNull()
+            ?.toList()
+            .orEmpty()
     }
 
     private fun brighten(color: Int, amount: Float): Int =

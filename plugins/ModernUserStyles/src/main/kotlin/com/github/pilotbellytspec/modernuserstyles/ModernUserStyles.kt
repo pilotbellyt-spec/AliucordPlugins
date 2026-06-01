@@ -61,6 +61,7 @@ class ModernUserStyles : Plugin() {
     private val roleSeen = mutableSetOf<Long>()
     private val roleWaiters = mutableMapOf<Long, MutableList<() -> Unit>>()
     private val viewOwners = WeakHashMap<TextView, Long>()
+    private val rowTags = WeakHashMap<TextView, Tag>()
     private val replySlots = WeakHashMap<WidgetChatListAdapterItemMessage, ReplyNameContext>()
 
     init {
@@ -106,30 +107,35 @@ class ModernUserStyles : Plugin() {
             val user = entry.message.author
             val member = entry.author
             val nameView = itemView.findViewById<TextView>(nameId)
-            val guildId = member?.guildId
-            val configuredName = nameView?.text?.toString().cleanName()
-            val preserveName = shouldPreserveConfiguredName(configuredName, user.id, user, member)
-            ensureGuildRolesFetched(guildId) {
-                if (viewOwners[nameView] == user.id) {
+            val gid = member?.guildId ?: guildOf(entry.message.channelId)
+            val mem = member ?: gid?.let { guild -> StoreStream.getGuilds().getMember(guild, user.id) }
+            val rowText = nameView?.text?.toString().cleanName()
+            val rowClr = roleOf(nameView, gid)
+            val keep = keepServerName(rowText, gid, mem)
+                || shouldPreserveConfiguredName(rowText, user.id, user, mem)
+            val name = if (keep) rowText else displayNameFor(user.id, user)
+            ensureGuildRolesFetched(gid) {
+                if (sameTag(nameView, user.id, gid, name)) {
+                    val fresh = gid?.let { guild -> StoreStream.getGuilds().getMember(guild, user.id) } ?: mem
                     renderUserName(
                         nameView,
                         user.id,
-                        if (preserveName) configuredName else displayNameFor(user.id, user),
+                        name,
                         styleFor(user.id, user),
-                        roleInk.forMember(member),
-                        guildId,
-                        preserveName,
+                        roleInk.forMember(fresh) ?: rowClr,
+                        gid,
+                        keep,
                     )
                 }
             }
             renderUserName(
                 nameView,
                 user.id,
-                if (preserveName) configuredName else displayNameFor(user.id, user),
+                name,
                 styleFor(user.id, user),
-                roleInk.forMember(member),
-                guildId,
-                preserveName,
+                roleInk.forMember(mem) ?: rowClr,
+                gid,
+                keep,
             )
         }
     }
@@ -148,14 +154,14 @@ class ModernUserStyles : Plugin() {
 
             val refEntry = replyData.messageEntry
             val user = refEntry.message.author
-            val guildId = refEntry.author?.guildId ?: entry.author?.guildId
-            val member = refEntry.author ?: guildId?.let { guild -> StoreStream.getGuilds().getMember(guild, user.id) }
-            val context = ReplyNameContext(user.id, user, member, guildId, refEntry.message.id)
+            val gid = refEntry.author?.guildId ?: entry.author?.guildId ?: guildOf(refEntry.message.channelId)
+            val mem = refEntry.author ?: gid?.let { guild -> StoreStream.getGuilds().getMember(guild, user.id) }
+            val context = ReplyNameContext(user.id, user, mem, gid, refEntry.message.id)
             replySlots[this] = context
-            ensureProfileFetched(user.id, guildId) {
+            ensureProfileFetched(user.id, gid) {
                 renderReplyNameIfCurrent(this, context)
             }
-            ensureGuildRolesFetched(guildId) {
+            ensureGuildRolesFetched(gid) {
                 renderReplyNameIfCurrent(this, context)
             }
         }
@@ -170,6 +176,7 @@ class ModernUserStyles : Plugin() {
 
             val context = replySlots[this]?.copy(
                 configuredName = (it.args[0] as? String).cleanName(),
+                clr = (it.args[1] as? Int)?.takeIf { c -> c != 0 },
             ) ?: return@after
             replySlots[this] = context
             val nameView = grab("replyName") as? TextView ?: return@after
@@ -194,13 +201,14 @@ class ModernUserStyles : Plugin() {
         val member = context.member ?: context.guildId?.let { guild -> StoreStream.getGuilds().getMember(guild, context.userId) }
         val username = usernameFor(context.userId, context.user)
         val displayName = displayNameFor(context.userId, context.user)
-        val preserveName = shouldPreserveReplyConfiguredName(context.configuredName, username, displayName, member)
+        val preserveName = keepServerName(context.configuredName, context.guildId, member)
+            || shouldPreserveReplyConfiguredName(context.configuredName, username, displayName, member)
         renderUserName(
             nameView,
             context.userId,
             if (preserveName) context.configuredName else displayName,
             styleFor(context.userId, context.user),
-            roleInk.forMember(member),
+            roleInk.forMember(member) ?: roleOf(context.clr, context.guildId),
             context.guildId,
             preserveName,
             fetchAsync = false,
@@ -808,8 +816,10 @@ class ModernUserStyles : Plugin() {
     ) {
         if (textView != null && fetchAsync) {
             viewOwners[textView] = userId
+            val mark = tag(userId, guildId, label)
+            rowTags[textView] = mark
             ensureProfileFetched(userId, guildId) {
-                if (viewOwners[textView] == userId) {
+                if (rowTags[textView] == mark) {
                     val refreshedLabel = if (preserveExistingNameOnRefresh) label else displayNameFor(userId, null)
                     renderUserName(
                         textView,
@@ -853,6 +863,7 @@ class ModernUserStyles : Plugin() {
         val guildId: Long?,
         val repliedMessageId: Long,
         val configuredName: String? = null,
+        val clr: Int? = null,
     )
 
     private fun ReplyNameContext.isSameReply(other: ReplyNameContext): Boolean =
@@ -869,6 +880,13 @@ class ModernUserStyles : Plugin() {
         return configured != username.cleanName() && configured != displayName.cleanName()
     }
 
+    private fun keepServerName(
+        configuredName: String?,
+        guildId: Long?,
+        member: GuildMember?,
+    ): Boolean =
+        guildId != null && (configuredName.cleanName() != null || member.hasCleanNick())
+
     private fun shouldPreserveConfiguredName(
         configuredName: String?,
         userId: Long,
@@ -881,6 +899,30 @@ class ModernUserStyles : Plugin() {
         val displayName = displayNameFor(userId, fallbackUser).cleanName()
         return configured != username && configured != displayName
     }
+
+    private fun guildOf(channelId: Long): Long? =
+        StoreStream.getChannels().getChannel(channelId).readLong("guildId", "getGuildId", "i")?.takeIf { it != 0L }
+
+    private fun roleOf(textView: TextView?, guildId: Long?): RoleGradient? =
+        roleOf(textView?.currentTextColor, guildId)
+
+    private fun roleOf(color: Int?, guildId: Long?): RoleGradient? {
+        if (guildId == null) return null
+        val primary = color?.and(0x00ffffff)?.takeIf { it != 0 } ?: return null
+        return RoleGradient(primaryColor = primary)
+    }
+
+    private fun sameTag(textView: TextView?, userId: Long, guildId: Long?, label: String?): Boolean =
+        textView != null && rowTags[textView] == tag(userId, guildId, label)
+
+    private fun tag(userId: Long, guildId: Long?, label: String?): Tag =
+        Tag(userId, guildId?.takeIf { it != 0L }, label.cleanName())
+
+    private data class Tag(
+        val userId: Long,
+        val guildId: Long?,
+        val label: String?,
+    )
 
     private fun ensureProfileFetched(userId: Long, guildId: Long? = null, onLoaded: (() -> Unit)? = null) {
         val realGuildId = guildId?.takeIf { it != 0L }

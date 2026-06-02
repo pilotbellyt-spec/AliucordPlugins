@@ -31,8 +31,9 @@ class RequestStore(private val settings: SettingsAPI) {
         val id = channel.optString("id").toLongOrNull() ?: return
         val state = channel.opt("consent_status")
         val stateText = state?.toString()?.lowercase().orEmpty()
-        val pending = state == 1 || stateText == "1" || stateText == "pending" || stateText == "untrusted" || stateText == "request"
-        val clear = state == 0 || state == 2 || stateText == "0" || stateText == "2" || stateText == "accepted" || stateText == "unspecified"
+        val code = (state as? Number)?.toInt()
+        val pending = code == 1 || stateText == "1" || stateText == "pending" || stateText == "untrusted" || stateText == "request"
+        val clear = code == 0 || code == 2 || stateText == "0" || stateText == "2" || stateText == "accepted" || stateText == "unspecified"
         if (pending || channel.isReq()) add(id) else if (clear) drop(id)
     }
 
@@ -41,7 +42,8 @@ class RequestStore(private val settings: SettingsAPI) {
         for (i in 0 until channels.length()) {
             val item = channels.optJSONObject(i) ?: continue
             val id = item.optString("id").toLongOrNull() ?: continue
-            if (item.isReq() || item.opt("consent_status") == 1) {
+            val state = item.opt("consent_status")
+            if (item.isReq() || (state as? Number)?.toInt() == 1 || state?.toString() == "1") {
                 next.add(id)
             }
         }

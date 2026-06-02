@@ -44,6 +44,7 @@ class MessageRequests : Plugin() {
     private lateinit var api: RequestApi
     private var live = false
     private var inbox = false
+    private var syncAt = 0L
     private var tab = WeakReference<WidgetChannelsList?>(null)
     private val seen = WeakHashMap<WidgetChannelsList, WidgetChannelListModel>()
 
@@ -59,7 +60,7 @@ class MessageRequests : Plugin() {
         dmList()
         dmStart()
         userMenu()
-        if (settings.getBool("syncList", true)) api.sync(::redraw)
+        refresh(true)
     }
 
     override fun stop(context: Context) {
@@ -73,13 +74,23 @@ class MessageRequests : Plugin() {
             try {
                 val old = reqs.all()
                 val ev = JSONObject(raw)
+                val type = ev.optString("t")
+                if (type == "READY" || type == "CONNECTION_OPEN") {
+                    refresh(true)
+                }
                 val data = ev.optJSONObject("d") ?: return@onRawEvent
-                if (ev.optString("t") == "CHANNEL_DELETE") {
+                if (type == "CHANNEL_DELETE") {
                     data.optString("id").toLongOrNull()?.let(reqs::drop)
                 } else {
                     reqs.ingest(data)
                 }
-                if (old != reqs.all()) redraw()
+                if (old != reqs.all()) {
+                    touch()
+                    redraw()
+                }
+                if (type == "CHANNEL_CREATE" || type == "CHANNEL_UPDATE" || type == "CHANNEL_DELETE") {
+                    refresh(false)
+                }
             } catch (err: Throwable) {
                 logger.warn("message request gateway payload failed", err)
             }
@@ -164,6 +175,24 @@ class MessageRequests : Plugin() {
         Utils.mainThread.post {
             val page = tab.get() ?: return@post
             seen[page]?.let { render(page, it) }
+        }
+    }
+
+    private fun refresh(now: Boolean) {
+        if (!settings.getBool("syncList", true)) return
+        val time = System.currentTimeMillis()
+        if (!now && time - syncAt < 15000L) return
+        syncAt = time
+        val old = reqs.all()
+        api.sync {
+            if (old != reqs.all()) touch()
+            redraw()
+        }
+    }
+
+    private fun touch() {
+        StoreStream.`access$getDispatcher$p`(StoreStream.getPresences().stream).schedule {
+            StoreStream.getMessagesMostRecent().markChanged()
         }
     }
 

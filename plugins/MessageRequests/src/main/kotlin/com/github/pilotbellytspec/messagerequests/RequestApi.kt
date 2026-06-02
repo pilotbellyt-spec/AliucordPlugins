@@ -13,9 +13,18 @@ class RequestApi(private val stash: RequestStore, private val toast: (String) ->
         Utils.threadPool.execute {
             try {
                 Http.Request.newDiscordRNRequest("/users/@me/channels").execute().use { response ->
-                    stash.loadChannels(JSONArray(response.text()))
+                    response.assertOk()
+                    val body = response.text().trim { it <= ' ' }
+                    if (body.startsWith("[")) {
+                        stash.loadChannels(JSONArray(body))
+                    } else {
+                        val root = JSONObject(body)
+                        root.optJSONArray("private_channels")?.let(stash::loadChannels)
+                        root.optJSONArray("channels")?.let(stash::loadChannels)
+                    }
                 }
-            } catch (_: Throwable) {
+            } catch (err: Throwable) {
+                log.warn("message request sync failed", err)
             } finally {
                 Utils.mainThread.post(done)
             }

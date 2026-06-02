@@ -1,9 +1,12 @@
-version = "0.0.7"
+version = "0.0.10"
 description = "Backport of Discord message requests"
 
 aliucord {
     changelog.set(
         """
+        # 0.0.10
+        * Refresh the DM list after request sync/live state changes.
+
         # 0.0.5
         * Stop treating empty message request timestamp fields as pending requests.
 

@@ -29,28 +29,23 @@ class RequestStore(private val settings: SettingsAPI) {
     fun update(channel: JSONObject?) {
         channel ?: return
         val id = channel.optString("id").toLongOrNull() ?: return
-        val state = channel.opt("consent_status")
-        val stateText = state?.toString()?.lowercase().orEmpty()
-        val code = (state as? Number)?.toInt()
-        val pending = code == 1 || stateText == "1" || stateText == "pending" || stateText == "untrusted" || stateText == "request"
-        val clear = code == 0 || code == 2 || stateText == "0" || stateText == "2" || stateText == "accepted" || stateText == "unspecified"
-        if (pending || channel.isReq()) add(id) else if (clear) drop(id)
+        when {
+            channel.isClear() -> drop(id)
+            channel.isReq() -> add(id)
+        }
     }
 
     fun loadChannels(channels: JSONArray) {
-        val next = linkedSetOf<Long>()
+        var changed = false
         for (i in 0 until channels.length()) {
             val item = channels.optJSONObject(i) ?: continue
             val id = item.optString("id").toLongOrNull() ?: continue
-            val state = item.opt("consent_status")
-            if (item.isReq() || (state as? Number)?.toInt() == 1 || state?.toString() == "1") {
-                next.add(id)
+            when {
+                item.isClear() -> if (ids.remove(id)) changed = true
+                item.isReq() -> if (ids.add(id)) changed = true
             }
         }
-        if (next == ids) return
-        ids.clear()
-        ids.addAll(next)
-        save()
+        if (changed) save()
     }
 
     fun ingest(raw: JSONObject) {
@@ -75,19 +70,20 @@ class RequestStore(private val settings: SettingsAPI) {
     }
 }
 
-private fun JSONObject.isReq(): Boolean {
-    return optBoolean("is_message_request", false) ||
-        optBoolean("is_spam", false) ||
-        optBoolean("is_message_request_spam", false) ||
-        hasTime("is_message_request_timestamp") ||
-        hasTime("message_request_timestamp")
+private fun JSONObject.isClear(): Boolean {
+    return when (state()) {
+        "0", "2", "accepted", "unspecified" -> true
+        else -> false
+    }
 }
 
-private fun JSONObject.hasTime(name: String): Boolean {
-    val raw = opt(name) ?: return false
-    if (raw == JSONObject.NULL) return false
-    val txt = raw.toString().trim { it <= ' ' }
-    return txt.isNotEmpty() && txt != "null" && txt != "0"
+private fun JSONObject.state(): String {
+    val raw = opt("consent_status") ?: return ""
+    return if (raw is Number) raw.toInt().toString() else raw.toString().lowercase()
+}
+
+private fun JSONObject.isReq(): Boolean {
+    return optBoolean("is_message_request", false)
 }
 
 private fun JSONArray.eachObj(block: (JSONObject) -> Unit) {

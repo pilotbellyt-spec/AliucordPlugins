@@ -88,9 +88,6 @@ class MessageRequests : Plugin() {
                     touch()
                     redraw()
                 }
-                if (type == "CHANNEL_CREATE" || type == "CHANNEL_UPDATE" || type == "CHANNEL_DELETE") {
-                    refresh(false)
-                }
             } catch (err: Throwable) {
                 logger.warn("message request gateway payload failed", err)
             }

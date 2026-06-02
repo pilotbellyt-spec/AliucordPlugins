@@ -19,8 +19,10 @@ class RequestApi(private val stash: RequestStore, private val toast: (String) ->
                         stash.loadChannels(JSONArray(body))
                     } else {
                         val root = JSONObject(body)
-                        root.optJSONArray("private_channels")?.let(stash::loadChannels)
-                        root.optJSONArray("channels")?.let(stash::loadChannels)
+                        stash.loadChannels(JSONArray().also {
+                            it.add(root.optJSONArray("private_channels"))
+                            it.add(root.optJSONArray("channels"))
+                        })
                     }
                 }
             } catch (err: Throwable) {
@@ -76,5 +78,10 @@ class RequestApi(private val stash: RequestStore, private val toast: (String) ->
                 }
             }
         }
+    }
+
+    private fun JSONArray.add(other: JSONArray?) {
+        other ?: return
+        for (i in 0 until other.length()) put(other.get(i))
     }
 }

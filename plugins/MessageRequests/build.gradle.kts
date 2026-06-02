@@ -1,9 +1,22 @@
-version = "0.0.10"
+version = "0.0.14"
 description = "Backport of Discord message requests"
 
 aliucord {
     changelog.set(
         """
+        # 0.0.14
+        * Only use Discord's is_message_request field to classify request DMs.
+
+        # 0.0.13
+        * Stop treating generic pending consent as a message request.
+
+        # 0.0.12
+        * Stop REST sync from overwriting live message request gateway state.
+
+        # 0.0.11
+        * Fix request inbox sync when Discord returns split channel arrays.
+        * Keep accepted requests out of the inbox when stale request markers remain.
+
         # 0.0.10
         * Refresh the DM list after request sync/live state changes.
 

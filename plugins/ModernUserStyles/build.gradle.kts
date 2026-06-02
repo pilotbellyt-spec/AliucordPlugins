@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.32"
+version = "0.0.33"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,10 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.33
+        * Rework chat, reply, and member-list styling to use Discord row models instead of recycled TextView state.
+        * Stop using previous view colors as role fallbacks, fixing stale names, fonts, and role colors on reused rows.
+
         # 0.0.32
         * Apply custom display-name colors and effects to DM headers, the top chat bar, the DM list, and private member-list names.
         * Style the large "beginning of DM" header with the same custom name effect path used by profiles.

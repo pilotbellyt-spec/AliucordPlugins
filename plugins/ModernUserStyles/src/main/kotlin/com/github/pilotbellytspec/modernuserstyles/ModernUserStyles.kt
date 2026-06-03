@@ -12,8 +12,6 @@ import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
 import com.aliucord.patcher.before
-import com.discord.models.member.GuildMember
-import com.discord.models.user.User as DiscordUser
 import com.discord.stores.StoreStream
 import com.discord.utilities.mg_recycler.MGRecyclerDataPayload
 import com.discord.utilities.textprocessing.node.UserMentionNode
@@ -63,7 +61,6 @@ class ModernUserStyles : Plugin() {
     private val roleWaiters = mutableMapOf<Long, MutableList<() -> Unit>>()
     private val viewOwners = WeakHashMap<TextView, Long>()
     private val rowTags = WeakHashMap<TextView, Tag>()
-    private val replyCtx = WeakHashMap<WidgetChatListAdapterItemMessage, ReplyCtx>()
 
     init {
         settingsTab = SettingsTab(PluginSettings::class.java, SettingsTab.Type.BOTTOM_SHEET).withArgs(settings)
@@ -74,7 +71,6 @@ class ModernUserStyles : Plugin() {
         roleInk = RoleGradientResolver()
 
         chatRows()
-        replyRows()
         memberList()
         profileHeader()
         mentionSpans()
@@ -137,88 +133,38 @@ class ModernUserStyles : Plugin() {
                 gid,
                 true,
             )
+            renderReplyFromEntry(this, entry)
         }
     }
 
-    private fun replyRows() {
-        val nameId = Utils.getResId("chat_list_adapter_item_text_decorator_reply_name", "id")
-
-        patcher.before<WidgetChatListAdapterItemMessage>(
-            "configureReplyPreview",
-            MessageEntry::class.java,
-        ) {
-            replyCtx.remove(this)
-        }
-
-        patcher.before<WidgetChatListAdapterItemMessage>(
-            "configureReplyAuthor",
-            DiscordUser::class.java,
-            GuildMember::class.java,
-            MessageEntry::class.java,
-        ) {
-            if (!settings.getBool("chatNames", true)) return@before
-
-            val user = it.args[0] as? DiscordUser ?: return@before
-            val mem = it.args[1] as? GuildMember
-            val entry = it.args[2] as? MessageEntry ?: return@before
-            val gid = mem?.guildId ?: entry.author?.guildId ?: guildOf(entry.message.channelId)
-            val context = ReplyCtx(user.id, user, mem, gid, entry.message.id)
-            replyCtx[this] = context
-            ensureProfileFetched(user.id, gid) {
-                renderReplyNameIfCurrent(this, context)
-            }
-            ensureGuildRolesFetched(gid) {
-                renderReplyNameIfCurrent(this, context)
-            }
-        }
-
-        patcher.after<WidgetChatListAdapterItemMessage>(
-            "configureReplyName",
-            String::class.java,
-            Int::class.javaPrimitiveType!!,
-            Boolean::class.javaPrimitiveType!!,
-        ) {
-            if (!settings.getBool("chatNames", true)) return@after
-
-            val context = replyCtx[this] ?: return@after
-            val nameView = itemView.findViewById<TextView>(nameId) ?: return@after
-            val label = nameView.text?.toString().cleanName()
-            if (label == null || nameView.visibility != View.VISIBLE) {
-                replyCtx.remove(this)
-                return@after
-            }
-
-            renderReplyName(nameView, context, label)
-        }
-    }
-
-    private fun renderReplyNameIfCurrent(
+    private fun renderReplyFromEntry(
         row: WidgetChatListAdapterItemMessage,
-        context: ReplyCtx,
+        entry: MessageEntry,
     ) {
-        val cachedContext = replyCtx[row] ?: return
-        if (cachedContext != context) return
         val nameId = Utils.getResId("chat_list_adapter_item_text_decorator_reply_name", "id")
         val nameView = row.itemView.findViewById<TextView>(nameId) ?: return
-        val label = nameView.text?.toString().cleanName() ?: return
         if (nameView.visibility != View.VISIBLE) return
-        renderReplyName(nameView, cachedContext, label)
-    }
-
-    private fun renderReplyName(
-        nameView: TextView,
-        context: ReplyCtx,
-        label: String,
-    ) {
+        val replied = entry.replyData?.messageEntry ?: return
+        val user = replied.message.author
+        val member = replied.author
+        val guildId = member?.guildId ?: guildOf(replied.message.channelId) ?: guildOf(entry.message.channelId)
+        val name = nameView.text?.toString().cleanName()
+            ?: replied.nickOrUsernames[user.id].cleanName()
+            ?: member?.nick.cleanName()
+            ?: displayNameFor(user.id, user)
+            ?: usernameFor(user.id, user)
+            ?: return
+        cacheUserObject(user.id, user)
         renderUserName(
             nameView,
-            context.userId,
-            label,
-            styleFor(context.userId, context.user),
-            roleInk.forMember(context.member),
-            context.guildId,
+            user.id,
+            name,
+            styleFor(user.id, user),
+            roleInk.forMember(member ?: guildId?.let { StoreStream.getGuilds().getMember(it, user.id) }),
+            guildId,
             true,
             fetchAsync = false,
+            allowReplacementEffects = false,
             keepPlainColor = true,
         )
     }
@@ -904,14 +850,6 @@ class ModernUserStyles : Plugin() {
             keepPlainColor,
         )
     }
-
-    private data class ReplyCtx(
-        val userId: Long,
-        val user: Any?,
-        val member: GuildMember?,
-        val guildId: Long?,
-        val repliedMessageId: Long,
-    )
 
     private fun guildOf(channelId: Long): Long? =
         StoreStream.getChannels().getChannel(channelId).readLong("guildId", "getGuildId", "i")?.takeIf { it != 0L }

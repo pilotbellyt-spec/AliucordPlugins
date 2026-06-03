@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.35"
+version = "0.0.36"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,12 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.36
+        * Keep DM sidebar names normal until their one-to-one DM is selected, then show the custom effect.
+        * Keep group DM names from being replaced by a single recipient's styled name.
+        * Keep Discord's selected, unread, and normal DM sidebar colors when clearing name effects.
+        * Clear stale one-to-one DM header effects when switching into group DMs.
+
         # 0.0.35
         * Harden reply username styling by following Discord's reply author path and avoiding recycled row state.
         * Keep Discord's live reply color when custom style or role data is not available yet.

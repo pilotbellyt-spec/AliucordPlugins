@@ -3,6 +3,7 @@ package com.github.pilotbellytspec.modernuserstyles
 import android.content.Context
 import android.text.Spanned
 import android.text.SpannableStringBuilder
+import android.util.TypedValue
 import android.view.View
 import android.widget.TextView
 import com.aliucord.Http
@@ -479,22 +480,49 @@ class ModernUserStyles : Plugin() {
             ChannelListItem::class.java,
         ) {
             val dmRow = it.args[1] as? ChannelListItemPrivate ?: return@after
-            val recipient = dmRow.channel.z()
-                .firstOrNull { user -> user.id != StoreStream.getUsers().me.id }
-                ?: dmRow.channel.z().firstOrNull()
-                ?: return@after
-            val storeUser = StoreStream.getUsers().users[recipient.id]
             val nameView = itemView.findViewById<TextView>(nameId)
+            val meId = StoreStream.getUsers().me.id
+            val recipients = dmRow.channel.z().filter { user -> user.id != meId }
+            if (recipients.size != 1) {
+                resetSidebarName(nameView, dmRow.channel.readString("name", "getName"))
+                return@after
+            }
+            val recipient = recipients.first()
+            val storeUser = StoreStream.getUsers().users[recipient.id]
+            val label = displayNameFor(recipient.id, recipient) ?: usernameFor(recipient.id, recipient)
+
+            if (!dmRow.selected) {
+                resetSidebarName(nameView, label)
+                return@after
+            }
 
             renderUserNameDrawable(
                 nameView,
                 recipient.id,
-                displayNameFor(recipient.id, recipient) ?: usernameFor(recipient.id, recipient),
+                label,
                 styleFor(recipient.id, storeUser ?: recipient),
                 null,
                 preserveExistingNameOnRefresh = true,
             )
         }
+    }
+
+    private fun resetSidebarName(textView: TextView?, label: String?) {
+        if (textView == null) return
+        val visible = textView.text?.toString().cleanName()
+        val color = textView.textColors
+        val typeface = textView.typeface
+        val textSize = textView.textSize
+        val scale = textView.textScaleX
+        val spacing = textView.letterSpacing
+        viewOwners.remove(textView)
+        nameInk.resetTextView(textView)
+        textView.setTextColor(color)
+        textView.typeface = typeface
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSize)
+        textView.textScaleX = scale
+        textView.letterSpacing = spacing
+        textView.text = visible ?: label.cleanName() ?: textView.contentDescription
     }
 
     private fun dmHeader() {
@@ -507,7 +535,7 @@ class ModernUserStyles : Plugin() {
             ChatListEntry::class.java,
         ) {
             val header = itemView.findViewById<TextView>(headerId) ?: return@after
-            styleCurrentPrivateRecipient(header, allowMultiline = true)
+            styleCurrentPrivateRecipient(header, allowMultiline = true, resetWhenNotMatched = true)
         }
     }
 

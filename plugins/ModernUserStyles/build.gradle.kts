@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.39"
+version = "0.0.40"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,9 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.40
+        * Stop DM name effects from leaking into non-DM toolbar titles.
+
         # 0.0.39
         * Clear stale DM header and toolbar name effects when switching conversations.
 

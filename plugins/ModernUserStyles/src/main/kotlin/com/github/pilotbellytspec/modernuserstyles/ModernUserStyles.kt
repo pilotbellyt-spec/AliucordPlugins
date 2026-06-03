@@ -494,12 +494,14 @@ class ModernUserStyles : Plugin() {
             Int::class.javaObjectType,
             Int::class.javaObjectType,
         ) {
-            styleCurrentPrivateRecipient(title, resetWhenNotMatched = true)
+            val toolbarLabel = (it.args[0] as? CharSequence)?.toString()
+            styleCurrentPrivateRecipient(title, toolbarLabel, resetWhenNotMatched = true)
         }
     }
 
     private fun styleCurrentPrivateRecipient(
         textView: TextView?,
+        expectedLabel: String? = null,
         allowMultiline: Boolean = false,
         resetWhenNotMatched: Boolean = false,
     ) {
@@ -526,6 +528,15 @@ class ModernUserStyles : Plugin() {
         val displayName = displayNameFor(recipient.id, recipient)
         val username = usernameFor(recipient.id, recipient)
         val wantedName = displayName ?: username
+        val expectedName = expectedLabel.cleanName()
+        if (expectedName != null &&
+            expectedName != displayName.cleanName() &&
+            expectedName != username.cleanName() &&
+            expectedName != channelName
+        ) {
+            if (resetWhenNotMatched) resetNameText(textView, expectedName)
+            return
+        }
         if (viewOwners[textView] != null && viewOwners[textView] != recipient.id) {
             resetNameText(textView, wantedName)
         }

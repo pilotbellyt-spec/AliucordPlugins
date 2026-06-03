@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.36"
+version = "0.0.37"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,9 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.37
+        * Keep the DM sidebar and header fixes on top of the stable reply styling build.
+
         # 0.0.36
         * Keep DM sidebar names normal until their one-to-one DM is selected, then show the custom effect.
         * Keep group DM names from being replaced by a single recipient's styled name.

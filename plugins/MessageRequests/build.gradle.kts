@@ -1,9 +1,13 @@
-version = "0.0.15"
+version = "0.0.16"
 description = "Backport of Discord message requests"
 
 aliucord {
     changelog.set(
         """
+        # 0.0.16
+        * Keep live message request rows available for the request inbox before restart.
+        * Refresh the request list when opening the Message Requests page.
+
         # 0.0.14
         * Only use Discord's is_message_request field to classify request DMs.
 

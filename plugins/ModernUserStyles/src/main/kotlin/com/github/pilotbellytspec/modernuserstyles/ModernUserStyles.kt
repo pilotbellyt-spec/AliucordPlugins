@@ -12,6 +12,7 @@ import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
 import com.aliucord.patcher.before
+import com.discord.api.channel.ChannelUtils
 import com.discord.stores.StoreStream
 import com.discord.utilities.mg_recycler.MGRecyclerDataPayload
 import com.discord.utilities.textprocessing.node.UserMentionNode
@@ -439,6 +440,17 @@ class ModernUserStyles : Plugin() {
 
             if (!dmRow.selected) {
                 resetSidebarName(nameView, label)
+                renderUserName(
+                    nameView,
+                    recipient.id,
+                    label,
+                    styleFor(recipient.id, storeUser ?: recipient),
+                    null,
+                    preserveExistingNameOnRefresh = true,
+                    useDisplayStyleColors = false,
+                    allowReplacementEffects = false,
+                    keepPlainColor = true,
+                )
                 return@after
             }
 
@@ -507,20 +519,27 @@ class ModernUserStyles : Plugin() {
     ) {
         if (textView == null) return
         val channel = runCatching { StoreStream.getChannelsSelected().selectedChannel }.getOrNull()
+        val expectedName = expectedLabel.cleanName()
         if (channel == null) {
-            if (resetWhenNotMatched) resetNameText(textView, null)
+            if (resetWhenNotMatched && ownsNameText(textView)) resetNameText(textView, expectedName)
+            return
+        }
+        if (!ChannelUtils.B(channel)) {
+            if (resetWhenNotMatched && ownsNameText(textView)) {
+                resetNameText(textView, expectedName ?: ChannelUtils.c(channel).cleanName())
+            }
             return
         }
         val recipients = runCatching { channel.z() }.getOrNull()
         if (recipients.isNullOrEmpty()) {
-            if (resetWhenNotMatched) resetNameText(textView, channel.readString("name", "getName"))
+            if (resetWhenNotMatched) resetNameText(textView, expectedName ?: channel.readString("name", "getName"))
             return
         }
         val meId = StoreStream.getUsers().me.id
         val recipient = recipients.firstOrNull { user -> user.id != meId } ?: recipients.firstOrNull() ?: return
         val channelName = channel.readString("name", "getName").cleanName()
         if (recipients.size != 1) {
-            if (resetWhenNotMatched) resetNameText(textView, channelName)
+            if (resetWhenNotMatched) resetNameText(textView, expectedName ?: channelName)
             return
         }
 
@@ -528,7 +547,6 @@ class ModernUserStyles : Plugin() {
         val displayName = displayNameFor(recipient.id, recipient)
         val username = usernameFor(recipient.id, recipient)
         val wantedName = displayName ?: username
-        val expectedName = expectedLabel.cleanName()
         if (expectedName != null &&
             expectedName != displayName.cleanName() &&
             expectedName != username.cleanName() &&
@@ -571,6 +589,7 @@ class ModernUserStyles : Plugin() {
         val spacing = textView.letterSpacing
         val fallback = label.cleanName() ?: textView.text?.toString().cleanName()
         viewOwners.remove(textView)
+        rowTags.remove(textView)
         nameInk.resetTextView(textView)
         textView.setTextColor(color)
         textView.typeface = typeface
@@ -579,6 +598,9 @@ class ModernUserStyles : Plugin() {
         textView.letterSpacing = spacing
         fallback?.let { textView.text = it }
     }
+
+    private fun ownsNameText(textView: TextView): Boolean =
+        viewOwners.containsKey(textView) || rowTags.containsKey(textView)
 
     private fun isSelectedPrivateChannel(): Boolean {
         val channel = runCatching { StoreStream.getChannelsSelected().selectedChannel }.getOrNull() ?: return false
@@ -596,7 +618,11 @@ class ModernUserStyles : Plugin() {
         preserveExistingNameOnRefresh: Boolean = false,
         allowMultiline: Boolean = false,
     ) {
-        if (textView != null) viewOwners[textView] = userId
+        val mark = tag(userId, guildId, label)
+        if (textView != null) {
+            viewOwners[textView] = userId
+            rowTags[textView] = mark
+        }
         nameInk.renderTextViewAsDrawable(
             textView,
             label,
@@ -610,7 +636,7 @@ class ModernUserStyles : Plugin() {
         )
         if (textView != null) {
             ensureProfileFetched(userId, guildId) {
-                if (viewOwners[textView] == userId) {
+                if (rowTags[textView] == mark) {
                     nameInk.renderTextViewAsDrawable(
                         textView,
                         if (preserveExistingNameOnRefresh) label else displayNameFor(userId, null),

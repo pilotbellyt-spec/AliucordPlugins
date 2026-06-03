@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.40"
+version = "0.0.41"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,12 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.41
+        * Keep DM sidebar font styles on unselected rows while limiting full name effects to the selected DM.
+        * Guard delayed drawable-name refreshes with the same row tag checks used by chat names.
+        * Restore non-DM toolbar titles after clearing stale DM name effects.
+        * Keep server channel toolbar titles out of the DM name-effect path.
+
         # 0.0.40
         * Stop DM name effects from leaking into non-DM toolbar titles.
 

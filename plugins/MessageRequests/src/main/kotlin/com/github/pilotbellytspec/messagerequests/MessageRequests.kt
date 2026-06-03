@@ -47,6 +47,7 @@ class MessageRequests : Plugin() {
     private var syncAt = 0L
     private var tab = WeakReference<WidgetChannelsList?>(null)
     private val seen = WeakHashMap<WidgetChannelsList, WidgetChannelListModel>()
+    private val rows = mutableMapOf<Long, ChannelListItemPrivate>()
 
     init {
         settingsTab = SettingsTab(PluginSettings::class.java, SettingsTab.Type.BOTTOM_SHEET).withArgs(settings)
@@ -114,6 +115,9 @@ class MessageRequests : Plugin() {
         patcher.before<MGRecyclerAdapterSimple<*>>("setData", List::class.java) {
             val data = it.args[0] as? List<*> ?: return@before
             if (data.none { row -> row is ChannelListItemPrivate }) return@before
+            data.filterIsInstance<ChannelListItemPrivate>().forEach { row ->
+                rows[row.channel.k()] = row
+            }
             it.args[0] = data.keepReqs()
         }
     }
@@ -137,6 +141,7 @@ class MessageRequests : Plugin() {
             setOnClickListener {
                 inbox = !inbox
                 seen[page]?.let { model -> render(page, model) }
+                if (inbox) refresh(true)
             }
         }
         wrap.addView(btn, ConstraintLayout.LayoutParams(px, px).apply {
@@ -152,11 +157,20 @@ class MessageRequests : Plugin() {
 
     private fun render(page: WidgetChannelsList, model: WidgetChannelListModel) {
         val root = page.binding()?.root ?: return
-        val items = model.items.keepReqs().filterIsInstance<ChannelListItem>()
+        val items = modelRows(model).keepReqs().filterIsInstance<ChannelListItem>()
         page.adapter()?.setData(items)
         root.findViewById<TextView>(DM_TITLE)?.text =
             if (inbox) "Message Requests" else "Direct Messages"
         root.findViewWithTag<AppCompatImageView>(REQ_TAB)?.alpha = if (inbox) 1f else 0.72f
+    }
+
+    private fun modelRows(model: WidgetChannelListModel): List<*> {
+        if (!inbox) return model.items
+        val seenIds = model.items
+            .filterIsInstance<ChannelListItemPrivate>()
+            .mapTo(mutableSetOf()) { it.channel.k() }
+        val extra = rows.values.filter { row -> reqs.has(row.channel.k()) && seenIds.add(row.channel.k()) }
+        return if (extra.isEmpty()) model.items else model.items + extra
     }
 
     private fun List<*>.keepReqs(): List<*> {

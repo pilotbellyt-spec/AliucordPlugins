@@ -319,7 +319,9 @@ class MessageBookmarks : Plugin() {
     }
 
     private fun mentionsAdapter(fragment: WidgetUserMentions): WidgetChatListAdapter? =
-        fragment.poke("mentionsAdapter") as? WidgetChatListAdapter
+        runCatching {
+            WidgetUserMentions::class.java.getDeclaredField("mentionsAdapter").apply { isAccessible = true }.get(fragment) as WidgetChatListAdapter
+        }.getOrNull()
 
     private fun actionItem(context: Context, id: Int, label: String, icon: android.graphics.drawable.Drawable?) =
         TextView(context, null, 0, R.i.UiKit_Settings_Item_Icon).apply {
@@ -486,26 +488,4 @@ class MessageBookmarks : Plugin() {
             }
         }
     }
-}
-
-private fun Any?.poke(vararg names: String): Any? {
-    val target = this ?: return null
-    names.forEach { name ->
-        var cls: Class<*>? = target.javaClass
-        while (cls != null) {
-            val currentClass = cls
-            try {
-                val field = currentClass.getDeclaredField(name).apply { isAccessible = true }
-                return field[target]
-            } catch (_: Throwable) {
-            }
-            try {
-                val method = currentClass.getDeclaredMethod(name).apply { isAccessible = true }
-                return method.invoke(target)
-            } catch (_: Throwable) {
-            }
-            cls = currentClass.superclass
-        }
-    }
-    return null
 }

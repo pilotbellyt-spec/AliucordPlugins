@@ -1,4 +1,4 @@
-version = "0.0.4"
+version = "0.0.5"
 description = "Ignore users without blocking them"
 
 aliucord {

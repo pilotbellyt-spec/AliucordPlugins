@@ -241,40 +241,11 @@ class IgnoreFeature : Plugin() {
     }
 
     private fun UserActionsDialog.binding(): UserActionsDialogBinding {
-        return javaClass.getDeclaredMethod("g").apply { isAccessible = true }.invoke(this) as UserActionsDialogBinding
+        return g()
     }
 
     private fun UserActionsDialog.userId(): Long {
-        return javaClass.getDeclaredMethod("h").apply { isAccessible = true }.invoke(this).readLong("l") ?: 0L
-    }
-
-    private fun Any?.readLong(vararg names: String): Long? =
-        when (val reflectedValue = peek(*names)) {
-            is Long -> reflectedValue
-            is Number -> reflectedValue.toLong()
-            else -> null
-        }
-
-    private fun Any?.peek(vararg names: String): Any? {
-        val target = this ?: return null
-        names.forEach { name ->
-        var cls: Class<*>? = target.javaClass
-        while (cls != null) {
-            val klass = cls
-            try {
-                val field = klass.getDeclaredField(name).apply { isAccessible = true }
-                return field[target]
-            } catch (_: Throwable) {
-            }
-            try {
-                val method = klass.getDeclaredMethod(name).apply { isAccessible = true }
-                return method.invoke(target)
-            } catch (_: Throwable) {
-            }
-            cls = klass.superclass
-        }
-        }
-        return null
+        return h().l
     }
 
     private fun isChatListModelBuildingRelationships(): Boolean {

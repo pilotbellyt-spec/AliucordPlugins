@@ -161,10 +161,10 @@ class MessageRequests : Plugin() {
 
     private fun List<*>.keepReqs(): List<*> {
         if (inbox) return filter {
-            it is ChannelListItemPrivate && reqs.has(it.channel.readLong("id", "getId", "k") ?: 0L)
+            it is ChannelListItemPrivate && reqs.has(it.channel.k())
         }
         return filter {
-            it !is ChannelListItemPrivate || !reqs.has(it.channel.readLong("id", "getId", "k") ?: 0L)
+            it !is ChannelListItemPrivate || !reqs.has(it.channel.k())
         }
     }
 
@@ -298,57 +298,25 @@ class MessageRequests : Plugin() {
 
     private fun currentDmId(): Long {
         val channel = runCatching { StoreStream.getChannelsSelected().selectedChannel }.getOrNull() ?: return 0L
-        val type = channel.readInt("type", "getType", "D") ?: return 0L
-        return if (type == Channel.DM || type == Channel.GROUP_DM) channel.readLong("id", "getId", "k") ?: 0L else 0L
+        val type = channel.D()
+        return if (type == Channel.DM || type == Channel.GROUP_DM) channel.k() else 0L
     }
 
     private fun WidgetChatListAdapterItemPrivateChannelStart.binding(): WidgetChatListAdapterItemPrivateChannelStartBinding? =
-        grab("binding") as? WidgetChatListAdapterItemPrivateChannelStartBinding
+        runCatching {
+            javaClass.getDeclaredField("binding").apply { isAccessible = true }.get(this) as WidgetChatListAdapterItemPrivateChannelStartBinding
+        }.getOrNull()
 
     private fun UserActionsDialog.binding(): UserActionsDialogBinding =
-        javaClass.getDeclaredMethod("g").apply { isAccessible = true }.invoke(this) as UserActionsDialogBinding
+        g()
 
     private fun WidgetChannelsList.binding(): WidgetChannelsListBinding? =
         runCatching { javaClass.getDeclaredMethod("getBinding").apply { isAccessible = true }.invoke(this) as WidgetChannelsListBinding }.getOrNull()
 
     private fun WidgetChannelsList.adapter(): WidgetChannelsListAdapter? =
-        grab("adapter") as? WidgetChannelsListAdapter
-
-    private fun Any?.readLong(vararg names: String): Long? =
-        when (val v = grab(*names)) {
-            is Long -> v
-            is Number -> v.toLong()
-            else -> null
-        }
-
-    private fun Any?.readInt(vararg names: String): Int? =
-        when (val v = grab(*names)) {
-            is Int -> v
-            is Number -> v.toInt()
-            else -> null
-        }
-
-    private fun Any?.grab(vararg names: String): Any? {
-        val item = this ?: return null
-        names.forEach { name ->
-            var cls: Class<*>? = item.javaClass
-            while (cls != null) {
-                val c = cls
-                try {
-                    val field = c.getDeclaredField(name).apply { isAccessible = true }
-                    return field[item]
-                } catch (_: Throwable) {
-                }
-                try {
-                    val method = c.getDeclaredMethod(name).apply { isAccessible = true }
-                    return method.invoke(item)
-                } catch (_: Throwable) {
-                }
-                cls = c.superclass
-            }
-        }
-        return null
-    }
+        runCatching {
+            javaClass.getDeclaredField("adapter").apply { isAccessible = true }.get(this) as WidgetChannelsListAdapter
+        }.getOrNull()
 
     companion object {
         private const val REQ_BANNER = "mr:banner"

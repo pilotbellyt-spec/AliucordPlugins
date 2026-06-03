@@ -83,47 +83,12 @@ class JumpToTop : Plugin() {
 
     private fun starter(): Pair<Long, Long>? {
         val ch = runCatching { StoreStream.getChannelsSelected().selectedChannel }.getOrNull() ?: return null
-        val type = ch.readInt("type", "getType", "D") ?: return null
+        val type = ch.D()
         if (type != Channel.PUBLIC_THREAD && type != Channel.PRIVATE_THREAD && type != Channel.ANNOUNCEMENT_THREAD) return null
-        val parentId = ch.readLong("parentId", "getParentId", "u") ?: return null
+        val parentId = ch.u()
         val parent = runCatching { StoreStream.getChannels().getChannel(parentId) }.getOrNull()
-        if (parent.readInt("type", "getType", "D") != Channel.GUILD_FORUM) return null
-        val id = ch.readLong("id", "getId", "k") ?: return null
+        if (parent?.D() != Channel.GUILD_FORUM) return null
+        val id = ch.k()
         return id to id
-    }
-
-    private fun Any?.readInt(vararg names: String): Int? =
-        when (val v = grab(*names)) {
-            is Int -> v
-            is Number -> v.toInt()
-            else -> null
-        }
-
-    private fun Any?.readLong(vararg names: String): Long? =
-        when (val v = grab(*names)) {
-            is Long -> v
-            is Number -> v.toLong()
-            else -> null
-        }
-
-    private fun Any?.grab(vararg names: String): Any? {
-        val obj = this ?: return null
-        names.forEach { name ->
-            var cls: Class<*>? = obj.javaClass
-            while (cls != null) {
-                try {
-                    val field = cls.getDeclaredField(name).apply { isAccessible = true }
-                    return field[obj]
-                } catch (_: Throwable) {
-                }
-                try {
-                    val method = cls.getDeclaredMethod(name).apply { isAccessible = true }
-                    return method.invoke(obj)
-                } catch (_: Throwable) {
-                }
-                cls = cls.superclass
-            }
-        }
-        return null
     }
 }

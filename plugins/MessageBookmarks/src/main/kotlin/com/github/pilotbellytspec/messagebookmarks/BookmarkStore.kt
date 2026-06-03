@@ -30,10 +30,10 @@ class BookmarkStore(private val settings: SettingsAPI) {
         val bookmark = BookmarkRecord(
             channelId = message.channelId,
             messageId = message.id,
-            guildId = channel.readLong("guildId", "getGuildId", "i")?.takeIf { it != 0L },
+            guildId = channel?.i()?.takeIf { it != 0L },
             authorId = message.author?.id,
             authorName = message.author?.username,
-            channelName = channel.readString("name", "getName", "p"),
+            channelName = channel?.p(),
             content = message.content.savedText(),
             savedAt = System.currentTimeMillis(),
             dueAt = dueAt,
@@ -117,36 +117,4 @@ private fun JSONObject.optCleanString(key: String): String? =
 private fun String?.savedText(): String? {
     val cleanText = this?.trim() ?: return null
     return if (cleanText.isEmpty() || cleanText == "null") null else cleanText
-}
-
-private fun Any?.readString(vararg names: String): String? =
-    poke(*names) as? String
-
-private fun Any?.readLong(vararg names: String): Long? =
-    when (val reflectedValue = poke(*names)) {
-        is Long -> reflectedValue
-        is Number -> reflectedValue.toLong()
-        else -> null
-    }
-
-private fun Any?.poke(vararg names: String): Any? {
-    val target = this ?: return null
-    names.forEach { name ->
-        var cls: Class<*>? = target.javaClass
-        while (cls != null) {
-            val currentClass = cls
-            try {
-                val field = currentClass.getDeclaredField(name).apply { isAccessible = true }
-                return field[target]
-            } catch (_: Throwable) {
-            }
-            try {
-                val method = currentClass.getDeclaredMethod(name).apply { isAccessible = true }
-                return method.invoke(target)
-            } catch (_: Throwable) {
-            }
-            cls = currentClass.superclass
-        }
-    }
-    return null
 }

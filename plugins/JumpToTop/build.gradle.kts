@@ -1,4 +1,4 @@
-version = "0.0.4"
+version = "0.0.5"
 description = "Adds a DiscordRN-style jump-to-top button for forum chats"
 
 aliucord {

@@ -46,6 +46,7 @@ class NameRenderer(private val context: Context) {
         allowMultiline: Boolean = false,
         allowReplacementEffects: Boolean = true,
         preserveReplacementEffectText: Boolean = false,
+        keepPlainColor: Boolean = false,
     ) {
         if (textView == null) return
 
@@ -53,6 +54,7 @@ class NameRenderer(private val context: Context) {
             ?: textView.text?.toString().cleanNameLabel()
             ?: return
         val renderToken = beginRender(textView)
+        val plainColor = textView.textColors
         val fontId = if (allowNameStyle) style?.fontId else null
         val styleColors = colorsForDisplayStyle(style, allowNameStyle && allowDisplayStyleColors)
         val colors = styleColors.ifEmpty { colorsFor(roleGradient, allowRoleGradient) }
@@ -76,7 +78,11 @@ class NameRenderer(private val context: Context) {
         textView.textScaleX = originalScaleX[textView] ?: 1f
         val originalLetterSpacing = originalLetterSpacing[textView] ?: 0f
         textView.letterSpacing = DisplayNameCatalog.letterSpacing(fontId, originalLetterSpacing)
-        textView.setTextColor(Color.WHITE)
+        if (keepPlainColor && colors.isEmpty()) {
+            textView.setTextColor(plainColor)
+        } else {
+            textView.setTextColor(Color.WHITE)
+        }
         textView.typeface = exactTypeface(fontId) ?: DisplayNameCatalog.typeface(fontId, originalTypefaces[textView])
         if (allowMultiline) {
             textView.setSingleLine(false)

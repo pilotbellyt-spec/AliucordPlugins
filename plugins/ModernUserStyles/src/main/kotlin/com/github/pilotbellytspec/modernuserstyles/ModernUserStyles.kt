@@ -12,7 +12,7 @@ import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
 import com.aliucord.patcher.before
 import com.discord.models.member.GuildMember
-import com.discord.stores.StoreMessageReplies
+import com.discord.models.user.User as DiscordUser
 import com.discord.stores.StoreStream
 import com.discord.utilities.mg_recycler.MGRecyclerDataPayload
 import com.discord.utilities.textprocessing.node.UserMentionNode
@@ -140,25 +140,28 @@ class ModernUserStyles : Plugin() {
     }
 
     private fun replyRows() {
+        val nameId = Utils.getResId("chat_list_adapter_item_text_decorator_reply_name", "id")
+
         patcher.before<WidgetChatListAdapterItemMessage>(
             "configureReplyPreview",
             MessageEntry::class.java,
         ) {
+            replyCtx.remove(this)
+        }
+
+        patcher.before<WidgetChatListAdapterItemMessage>(
+            "configureReplyAuthor",
+            DiscordUser::class.java,
+            GuildMember::class.java,
+            MessageEntry::class.java,
+        ) {
             if (!settings.getBool("chatNames", true)) return@before
 
-            replyCtx.remove(this)
-            val entry = it.args[0] as MessageEntry
-            val replyData = entry.replyData ?: return@before
-            if (replyData.messageState !is StoreMessageReplies.MessageState.Loaded) return@before
-
-            val refEntry = replyData.messageEntry
-            val user = refEntry.message.author
-            val kind = refEntry.message.type
-            if (kind == 7 || kind == 25) return@before
-
-            val mem = refEntry.author
-            val gid = mem?.guildId ?: guildOf(refEntry.message.channelId)
-            val context = ReplyCtx(user.id, user, mem, gid, refEntry.message.id)
+            val user = it.args[0] as? DiscordUser ?: return@before
+            val mem = it.args[1] as? GuildMember
+            val entry = it.args[2] as? MessageEntry ?: return@before
+            val gid = mem?.guildId ?: entry.author?.guildId ?: guildOf(entry.message.channelId)
+            val context = ReplyCtx(user.id, user, mem, gid, entry.message.id)
             replyCtx[this] = context
             ensureProfileFetched(user.id, gid) {
                 renderReplyNameIfCurrent(this, context)
@@ -177,7 +180,7 @@ class ModernUserStyles : Plugin() {
             if (!settings.getBool("chatNames", true)) return@after
 
             val context = replyCtx[this] ?: return@after
-            val nameView = grab("replyName") as? TextView ?: return@after
+            val nameView = itemView.findViewById<TextView>(nameId) ?: return@after
             val label = nameView.text?.toString().cleanName()
             if (label == null || nameView.visibility != View.VISIBLE) {
                 replyCtx.remove(this)
@@ -194,7 +197,8 @@ class ModernUserStyles : Plugin() {
     ) {
         val cachedContext = replyCtx[row] ?: return
         if (cachedContext != context) return
-        val nameView = row.grab("replyName") as? TextView ?: return
+        val nameId = Utils.getResId("chat_list_adapter_item_text_decorator_reply_name", "id")
+        val nameView = row.itemView.findViewById<TextView>(nameId) ?: return
         val label = nameView.text?.toString().cleanName() ?: return
         if (nameView.visibility != View.VISIBLE) return
         renderReplyName(nameView, cachedContext, label)
@@ -214,6 +218,7 @@ class ModernUserStyles : Plugin() {
             context.guildId,
             true,
             fetchAsync = false,
+            keepPlainColor = true,
         )
     }
 
@@ -825,6 +830,7 @@ class ModernUserStyles : Plugin() {
         allowMultiline: Boolean = false,
         allowReplacementEffects: Boolean = true,
         preserveReplacementEffectText: Boolean = false,
+        keepPlainColor: Boolean = false,
     ) {
         if (textView != null && fetchAsync) {
             viewOwners[textView] = userId
@@ -846,6 +852,7 @@ class ModernUserStyles : Plugin() {
                         allowMultiline = allowMultiline,
                         allowReplacementEffects = allowReplacementEffects,
                         preserveReplacementEffectText = preserveReplacementEffectText,
+                        keepPlainColor = keepPlainColor,
                     )
                 }
             }
@@ -866,6 +873,7 @@ class ModernUserStyles : Plugin() {
             allowMultiline,
             allowReplacementEffects,
             preserveReplacementEffectText,
+            keepPlainColor,
         )
     }
 

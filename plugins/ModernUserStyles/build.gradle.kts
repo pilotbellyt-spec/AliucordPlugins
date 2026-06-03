@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.34"
+version = "0.0.35"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,10 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.35
+        * Harden reply username styling by following Discord's reply author path and avoiding recycled row state.
+        * Keep Discord's live reply color when custom style or role data is not available yet.
+
         # 0.0.33
         * Rework chat, reply, and member-list styling to use Discord row models instead of recycled TextView state.
         * Stop using previous view colors as role fallbacks, fixing stale names, fonts, and role colors on reused rows.

@@ -506,31 +506,38 @@ class ModernUserStyles : Plugin() {
         if (textView == null) return
         val channel = runCatching { StoreStream.getChannelsSelected().selectedChannel }.getOrNull()
         if (channel == null) {
-            if (resetWhenNotMatched) nameInk.resetTextView(textView)
+            if (resetWhenNotMatched) resetNameText(textView, null)
             return
         }
         val recipients = runCatching { channel.z() }.getOrNull()
         if (recipients.isNullOrEmpty()) {
-            if (resetWhenNotMatched) nameInk.resetTextView(textView)
+            if (resetWhenNotMatched) resetNameText(textView, channel.readString("name", "getName"))
             return
         }
         val meId = StoreStream.getUsers().me.id
         val recipient = recipients.firstOrNull { user -> user.id != meId } ?: recipients.firstOrNull() ?: return
+        val channelName = channel.readString("name", "getName").cleanName()
         if (recipients.size != 1) {
-            if (resetWhenNotMatched) nameInk.resetTextView(textView)
+            if (resetWhenNotMatched) resetNameText(textView, channelName)
             return
         }
 
         val storeUser = StoreStream.getUsers().users[recipient.id]
         val displayName = displayNameFor(recipient.id, recipient)
         val username = usernameFor(recipient.id, recipient)
-        val currentText = textView.text?.toString().cleanName() ?: return
-        val channelName = channel.readString("name", "getName").cleanName()
+        val wantedName = displayName ?: username
+        if (viewOwners[textView] != null && viewOwners[textView] != recipient.id) {
+            resetNameText(textView, wantedName)
+        }
+        val currentText = textView.text?.toString().cleanName()
+            ?: textView.contentDescription?.toString().cleanName()
+            ?: wantedName
+            ?: return
         val matchesRecipient = currentText == displayName.cleanName() ||
             currentText == username.cleanName() ||
             currentText == channelName
         if (!matchesRecipient) {
-            if (resetWhenNotMatched) nameInk.resetTextView(textView)
+            if (resetWhenNotMatched) resetNameText(textView, wantedName)
             return
         }
 
@@ -543,6 +550,23 @@ class ModernUserStyles : Plugin() {
             preserveExistingNameOnRefresh = true,
             allowMultiline = allowMultiline,
         )
+    }
+
+    private fun resetNameText(textView: TextView, label: String?) {
+        val color = textView.textColors
+        val typeface = textView.typeface
+        val textSize = textView.textSize
+        val scale = textView.textScaleX
+        val spacing = textView.letterSpacing
+        val fallback = label.cleanName() ?: textView.text?.toString().cleanName()
+        viewOwners.remove(textView)
+        nameInk.resetTextView(textView)
+        textView.setTextColor(color)
+        textView.typeface = typeface
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSize)
+        textView.textScaleX = scale
+        textView.letterSpacing = spacing
+        fallback?.let { textView.text = it }
     }
 
     private fun isSelectedPrivateChannel(): Boolean {

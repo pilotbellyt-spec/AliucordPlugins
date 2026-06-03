@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.38"
+version = "0.0.39"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,9 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.39
+        * Clear stale DM header and toolbar name effects when switching conversations.
+
         # 0.0.38
         * Bind reply names from the current message row so recycled reply previews keep the right user, font, and role color.
 

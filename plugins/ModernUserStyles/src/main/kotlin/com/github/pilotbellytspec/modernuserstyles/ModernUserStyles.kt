@@ -62,7 +62,7 @@ class ModernUserStyles : Plugin() {
     private val roleWaiters = mutableMapOf<Long, MutableList<() -> Unit>>()
     private val viewOwners = WeakHashMap<TextView, Long>()
     private val rowTags = WeakHashMap<TextView, Tag>()
-    private val replySlots = WeakHashMap<WidgetChatListAdapterItemMessage, ReplyNameContext>()
+    private val replyCtx = WeakHashMap<WidgetChatListAdapterItemMessage, ReplyCtx>()
 
     init {
         settingsTab = SettingsTab(PluginSettings::class.java, SettingsTab.Type.BOTTOM_SHEET).withArgs(settings)
@@ -146,21 +146,20 @@ class ModernUserStyles : Plugin() {
         ) {
             if (!settings.getBool("chatNames", true)) return@before
 
-            replySlots.remove(this)
+            replyCtx.remove(this)
             val entry = it.args[0] as MessageEntry
             val replyData = entry.replyData ?: return@before
             if (replyData.messageState !is StoreMessageReplies.MessageState.Loaded) return@before
 
             val refEntry = replyData.messageEntry
             val user = refEntry.message.author
-            val gid = refEntry.author?.guildId ?: entry.author?.guildId ?: guildOf(refEntry.message.channelId)
-            val mem = refEntry.author ?: gid?.let { guild -> StoreStream.getGuilds().getMember(guild, user.id) }
-            val name = refEntry.nickOrUsernames[user.id].cleanName()
-                ?: mem?.nick.cleanName()
-                ?: displayNameFor(user.id, user)
-                ?: usernameFor(user.id, user)
-            val context = ReplyNameContext(user.id, user, mem, gid, refEntry.message.id, name)
-            replySlots[this] = context
+            val kind = refEntry.message.type
+            if (kind == 7 || kind == 25) return@before
+
+            val mem = refEntry.author
+            val gid = mem?.guildId ?: guildOf(refEntry.message.channelId)
+            val context = ReplyCtx(user.id, user, mem, gid, refEntry.message.id)
+            replyCtx[this] = context
             ensureProfileFetched(user.id, gid) {
                 renderReplyNameIfCurrent(this, context)
             }
@@ -177,40 +176,41 @@ class ModernUserStyles : Plugin() {
         ) {
             if (!settings.getBool("chatNames", true)) return@after
 
-            val context = replySlots[this]?.copy(
-                configuredName = (it.args[0] as? String).cleanName(),
-            ) ?: return@after
-            replySlots[this] = context
+            val context = replyCtx[this] ?: return@after
             val nameView = grab("replyName") as? TextView ?: return@after
-            renderReplyName(nameView, context)
+            val label = nameView.text?.toString().cleanName()
+            if (label == null || nameView.visibility != View.VISIBLE) {
+                replyCtx.remove(this)
+                return@after
+            }
+
+            renderReplyName(nameView, context, label)
         }
     }
 
     private fun renderReplyNameIfCurrent(
         row: WidgetChatListAdapterItemMessage,
-        context: ReplyNameContext,
+        context: ReplyCtx,
     ) {
-        val cachedContext = replySlots[row] ?: return
-        if (!cachedContext.isSameReply(context)) return
+        val cachedContext = replyCtx[row] ?: return
+        if (cachedContext != context) return
         val nameView = row.grab("replyName") as? TextView ?: return
-        renderReplyName(nameView, cachedContext)
+        val label = nameView.text?.toString().cleanName() ?: return
+        if (nameView.visibility != View.VISIBLE) return
+        renderReplyName(nameView, cachedContext, label)
     }
 
     private fun renderReplyName(
         nameView: TextView,
-        context: ReplyNameContext,
+        context: ReplyCtx,
+        label: String,
     ) {
-        val member = context.member ?: context.guildId?.let { guild -> StoreStream.getGuilds().getMember(guild, context.userId) }
-        val name = context.configuredName.cleanName()
-            ?: member?.nick.cleanName()
-            ?: displayNameFor(context.userId, context.user)
-            ?: usernameFor(context.userId, context.user)
         renderUserName(
             nameView,
             context.userId,
-            name,
+            label,
             styleFor(context.userId, context.user),
-            roleInk.forMember(member),
+            roleInk.forMember(context.member),
             context.guildId,
             true,
             fetchAsync = false,
@@ -869,17 +869,13 @@ class ModernUserStyles : Plugin() {
         )
     }
 
-    private data class ReplyNameContext(
+    private data class ReplyCtx(
         val userId: Long,
         val user: Any?,
         val member: GuildMember?,
         val guildId: Long?,
         val repliedMessageId: Long,
-        val configuredName: String? = null,
     )
-
-    private fun ReplyNameContext.isSameReply(other: ReplyNameContext): Boolean =
-        userId == other.userId && repliedMessageId == other.repliedMessageId
 
     private fun guildOf(channelId: Long): Long? =
         StoreStream.getChannels().getChannel(channelId).readLong("guildId", "getGuildId", "i")?.takeIf { it != 0L }

@@ -137,9 +137,11 @@ class NameRenderer(private val context: Context) {
         roleGradient: RoleGradient?,
         allowRoleGradient: Boolean,
     ): List<Int> {
-        if (!allowRoleGradient || roleGradient == null) return emptyList()
+        if (roleGradient == null) return emptyList()
 
         val primary = roleGradient.primaryColor.takeIf { it != 0 } ?: return emptyList()
+        if (!allowRoleGradient) return listOf(primary)
+
         val secondary = roleGradient.secondaryColor?.takeIf { it != 0 }
         val tertiary = roleGradient.tertiaryColor?.takeIf { it != 0 }
 

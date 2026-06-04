@@ -3,7 +3,6 @@ package com.github.pilotbellytspec.modernuserstyles
 import android.os.Bundle
 import android.view.View
 import android.widget.TextView
-import com.aliucord.PluginManager
 import com.aliucord.Utils
 import com.aliucord.api.SettingsAPI
 import com.aliucord.widgets.BottomSheet
@@ -22,8 +21,7 @@ class PluginSettings(private val settings: SettingsAPI) : BottomSheet() {
                     isChecked = settings.getBool(key, default)
                     setOnCheckedListener {
                         settings.setBool(key, it)
-                        PluginManager.stopPlugin("ModernUserStyles")
-                        PluginManager.startPlugin("ModernUserStyles")
+                        Utils.promptRestart("ModernUserStyles settings require a restart. Restart now?")
                     }
                 },
             )

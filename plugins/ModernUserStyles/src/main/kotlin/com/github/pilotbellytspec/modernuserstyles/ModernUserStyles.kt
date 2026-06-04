@@ -46,7 +46,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.WeakHashMap
 
-@AliucordPlugin(requiresRestart = false)
+@AliucordPlugin(requiresRestart = true)
 @Suppress("unused", "UNCHECKED_CAST")
 class ModernUserStyles : Plugin() {
     private lateinit var nameInk: NameRenderer
@@ -582,20 +582,10 @@ class ModernUserStyles : Plugin() {
     }
 
     private fun resetNameText(textView: TextView, label: String?) {
-        val color = textView.textColors
-        val typeface = textView.typeface
-        val textSize = textView.textSize
-        val scale = textView.textScaleX
-        val spacing = textView.letterSpacing
         val fallback = label.cleanName() ?: textView.text?.toString().cleanName()
         viewOwners.remove(textView)
         rowTags.remove(textView)
         nameInk.resetTextView(textView)
-        textView.setTextColor(color)
-        textView.typeface = typeface
-        textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSize)
-        textView.textScaleX = scale
-        textView.letterSpacing = spacing
         fallback?.let { textView.text = it }
     }
 

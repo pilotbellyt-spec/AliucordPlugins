@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.41"
+version = "0.0.42"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,11 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.42
+        * Make install, uninstall, update, and settings changes require an Aliucord restart.
+        * Keep solid role colors when role gradients are turned off.
+        * Restore normal toolbar title styling when leaving styled DMs.
+
         # 0.0.41
         * Keep DM sidebar font styles on unselected rows while limiting full name effects to the selected DM.
         * Guard delayed drawable-name refreshes with the same row tag checks used by chat names.

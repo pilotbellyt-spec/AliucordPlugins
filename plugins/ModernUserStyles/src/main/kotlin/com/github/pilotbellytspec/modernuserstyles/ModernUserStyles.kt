@@ -1,8 +1,10 @@
 package com.github.pilotbellytspec.modernuserstyles
 
 import android.content.Context
+import android.text.Spannable
 import android.text.Spanned
 import android.text.SpannableStringBuilder
+import android.text.style.LeadingMarginSpan
 import android.util.TypedValue
 import android.view.View
 import android.widget.TextView
@@ -168,6 +170,32 @@ class ModernUserStyles : Plugin() {
             allowReplacementEffects = false,
             keepPlainColor = true,
         )
+        syncReplyPreviewInset(row)
+        nameView.post { syncReplyPreviewInset(row) }
+    }
+
+    private fun syncReplyPreviewInset(row: WidgetChatListAdapterItemMessage) {
+        val holderId = Utils.getResId("chat_list_adapter_item_reply_leading_views", "id")
+        val textId = Utils.getResId("chat_list_adapter_item_text_reply_content", "id")
+        val holder = row.itemView.findViewById<View>(holderId) ?: return
+        val text = row.itemView.findViewById<TextView>(textId) ?: return
+        val content = text.text ?: return
+        val spans = when (content) {
+            is Spannable -> content
+            else -> SpannableStringBuilder(content)
+        }
+        holder.measure(0, 0)
+        spans.getSpans(0, spans.length, LeadingMarginSpan::class.java).forEach { span ->
+            spans.removeSpan(span)
+        }
+        if (spans.isNotEmpty()) {
+            spans.setSpan(LeadingMarginSpan.Standard(holder.measuredWidth, 0), 0, spans.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        if (spans !== content) {
+            text.text = spans
+        } else {
+            text.invalidate()
+        }
     }
 
     private fun memberList() {

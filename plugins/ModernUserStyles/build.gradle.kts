@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.42"
+version = "0.0.43"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,9 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.43
+        * Recalculate reply preview spacing after styled reply names render.
+
         # 0.0.42
         * Make install, uninstall, update, and settings changes require an Aliucord restart.
         * Keep solid role colors when role gradients are turned off.

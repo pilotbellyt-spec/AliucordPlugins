@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.45"
+version = "0.0.46"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,9 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.46
+        * Stop stale display-name font styles from sticking to recycled message rows.
+
         # 0.0.45
         * Keep regular message role colors tied to Discord's current message row data.
 

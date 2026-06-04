@@ -72,6 +72,7 @@ class NameRenderer(private val context: Context) {
         originalScaleX.putIfAbsent(textView, textView.textScaleX)
         originalLetterSpacing.putIfAbsent(textView, textView.letterSpacing)
         originalTextColors.putIfAbsent(textView, textView.textColors)
+        restoreNameFont(textView)
         textView.paint.shader = null
         textView.paint.clearShadowLayer()
         textView.paint.isFakeBoldText = false
@@ -185,6 +186,7 @@ class NameRenderer(private val context: Context) {
         originalTextColors.putIfAbsent(textView, textView.textColors)
         originalCompoundDrawables.putIfAbsent(textView, textView.compoundDrawables.copyOf())
         originalCompoundDrawablePadding.putIfAbsent(textView, textView.compoundDrawablePadding)
+        restoreNameFont(textView)
 
         if (fontId == null && styleColors.isEmpty() && roleColors.isEmpty()) {
             resetTextView(textView)
@@ -277,16 +279,21 @@ class NameRenderer(private val context: Context) {
         val originalSpacing = originalLetterSpacing[textView] ?: textView.letterSpacing
         val changesFont = fontId != null && fontId != DisplayNameCatalog.Font.DEFAULT
         if (!changesFont) {
-            if (changedFonts.remove(textView) == true) {
-                textView.letterSpacing = originalSpacing
-                originalTypefaces[textView]?.let { textView.typeface = it }
-            }
+            restoreNameFont(textView)
             return
         }
 
         changedFonts[textView] = true
         textView.letterSpacing = DisplayNameCatalog.letterSpacing(fontId, originalSpacing)
         textView.typeface = exactTypeface(fontId) ?: DisplayNameCatalog.typeface(fontId, originalTypefaces[textView])
+    }
+
+    private fun restoreNameFont(textView: TextView) {
+        originalLetterSpacing[textView]?.let { textView.letterSpacing = it }
+        if (originalTypefaces.containsKey(textView)) {
+            textView.typeface = originalTypefaces[textView]
+        }
+        changedFonts.remove(textView)
     }
 
     fun effectForRoleColors(colors: List<Int>): Int =

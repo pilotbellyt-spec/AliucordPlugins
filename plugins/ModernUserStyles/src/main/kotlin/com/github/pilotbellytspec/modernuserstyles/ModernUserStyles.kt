@@ -1118,8 +1118,28 @@ class ModernUserStyles : Plugin() {
             ?: fallbackUser.readString("username", "getUsername").cleanName()
             ?: StoreStream.getUsers().users[userId]?.username.cleanName()
 
-    private fun styleFor(userId: Long, fallbackUser: Any?): DisplayStyleData? =
-        savedStyles[userId] ?: fallbackUser.readDisplayStyle() ?: StoreStream.getUsers().users[userId].readDisplayStyle()
+    private fun styleFor(userId: Long, fallbackUser: Any?): DisplayStyleData? {
+        fallbackUser.readDisplayStyle()?.let {
+            savedStyles[userId] = it
+            return it
+        }
+        if (fallbackUser.hasSlot("displayNameStyles", "getDisplayNameStyles")) {
+            savedStyles.remove(userId)
+            return null
+        }
+
+        val storeUser = StoreStream.getUsers().users[userId]
+        storeUser.readDisplayStyle()?.let {
+            savedStyles[userId] = it
+            return it
+        }
+        if (storeUser.hasSlot("displayNameStyles", "getDisplayNameStyles")) {
+            savedStyles.remove(userId)
+            return null
+        }
+
+        return savedStyles[userId]
+    }
 
     private fun cacheProfileObject(userId: Long, profile: Any?) {
         val apiUser = profile.grab("user", "getUser", "g")
@@ -1133,12 +1153,11 @@ class ModernUserStyles : Plugin() {
         user.readString("globalName", "getGlobalName").cleanName()?.let {
             savedNames[userId] = it
         }
-        user.readDisplayStyle().let {
-            if (it != null) {
-                savedStyles[userId] = it
-            } else if (user.grab("displayNameStyles", "getDisplayNameStyles") != null) {
-                savedStyles.remove(userId)
-            }
+        val style = user.readDisplayStyle()
+        if (style != null) {
+            savedStyles[userId] = style
+        } else if (user.hasSlot("displayNameStyles", "getDisplayNameStyles")) {
+            savedStyles.remove(userId)
         }
     }
 
@@ -1207,6 +1226,27 @@ class ModernUserStyles : Plugin() {
             }
         }
         return null
+    }
+
+    private fun Any?.hasSlot(vararg names: String): Boolean {
+        val target = this ?: return false
+        var cls: Class<*>?
+        names.forEach { name ->
+            cls = target.javaClass
+            while (true) {
+                val check = cls ?: break
+                runCatching {
+                    check.getDeclaredField(name)
+                    return true
+                }
+                runCatching {
+                    check.getDeclaredMethod(name)
+                    return true
+                }
+                cls = check.superclass
+            }
+        }
+        return false
     }
 
     private fun styleMatchingTextViews(root: View, userId: Long, user: Any?) {

@@ -44,6 +44,7 @@ class MessageRequests : Plugin() {
     private lateinit var api: RequestApi
     private var live = false
     private var inbox = false
+    private var manualDmFor = 0L
     private var syncAt = 0L
     private var tab = WeakReference<WidgetChannelsList?>(null)
     private val seen = WeakHashMap<WidgetChannelsList, WidgetChannelListModel>()
@@ -110,6 +111,7 @@ class MessageRequests : Plugin() {
             }
             tab = WeakReference(page)
             seen[page] = model
+            useInboxForSelectedRequest()
             render(page, model)
         }
         patcher.before<MGRecyclerAdapterSimple<*>>("setData", List::class.java) {
@@ -140,6 +142,7 @@ class MessageRequests : Plugin() {
             contentDescription = "Message Requests"
             setOnClickListener {
                 inbox = !inbox
+                manualDmFor = if (!inbox) currentDmId() else 0L
                 seen[page]?.let { model -> render(page, model) }
                 if (inbox) refresh(true)
             }
@@ -185,8 +188,21 @@ class MessageRequests : Plugin() {
     private fun redraw() {
         Utils.mainThread.post {
             val page = tab.get() ?: return@post
-            seen[page]?.let { render(page, it) }
+            seen[page]?.let {
+                useInboxForSelectedRequest()
+                render(page, it)
+            }
         }
+    }
+
+    private fun useInboxForSelectedRequest() {
+        val channelId = currentDmId()
+        if (channelId == 0L) {
+            manualDmFor = 0L
+            return
+        }
+        if (manualDmFor != 0L && manualDmFor != channelId) manualDmFor = 0L
+        if (reqs.has(channelId) && manualDmFor != channelId) inbox = true
     }
 
     private fun refresh(now: Boolean) {

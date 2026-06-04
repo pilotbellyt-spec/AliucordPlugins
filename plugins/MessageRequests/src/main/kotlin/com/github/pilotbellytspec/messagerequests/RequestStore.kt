@@ -29,6 +29,10 @@ class RequestStore(private val settings: SettingsAPI) {
     fun update(channel: JSONObject?) {
         channel ?: return
         val id = channel.optString("id").toLongOrNull() ?: return
+        if (channel.has("is_message_request")) {
+            if (channel.isReq()) add(id) else drop(id)
+            return
+        }
         when {
             channel.isClear() -> drop(id)
             channel.isReq() -> add(id)
@@ -40,9 +44,14 @@ class RequestStore(private val settings: SettingsAPI) {
         for (i in 0 until channels.length()) {
             val item = channels.optJSONObject(i) ?: continue
             val id = item.optString("id").toLongOrNull() ?: continue
-            when {
-                item.isClear() -> if (ids.remove(id)) changed = true
-                item.isReq() -> if (ids.add(id)) changed = true
+            if (item.has("is_message_request")) {
+                if (item.isReq()) {
+                    if (ids.add(id)) changed = true
+                } else if (ids.remove(id)) {
+                    changed = true
+                }
+            } else if (item.isClear()) {
+                if (ids.remove(id)) changed = true
             }
         }
         if (changed) save()

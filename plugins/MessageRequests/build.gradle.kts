@@ -1,9 +1,14 @@
-version = "0.0.16"
+version = "0.0.17"
 description = "Backport of Discord message requests"
 
 aliucord {
     changelog.set(
         """
+        # 0.0.17
+        * Mirror Discord's request state when sync/live channel payloads explicitly mark a DM accepted.
+        * Keep pending requests when a partial sync omits their channel rows.
+        * Switch the DM list to Message Requests when the selected DM is a pending request.
+
         # 0.0.16
         * Keep live message request rows available for the request inbox before restart.
         * Refresh the request list when opening the Message Requests page.

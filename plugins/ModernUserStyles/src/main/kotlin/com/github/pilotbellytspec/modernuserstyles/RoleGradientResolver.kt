@@ -31,11 +31,14 @@ class RoleGradientResolver {
         normalized.position?.let { runtimeRolePositions[roleId] = it }
     }
 
-    fun forMember(member: GuildMember?): RoleGradient? {
+    fun forMember(member: GuildMember?): RoleGradient? =
+        forMember(member, null)
+
+    fun forMember(member: GuildMember?, roles: Map<Long, GuildRole>?): RoleGradient? {
         if (member == null) return null
 
         val guildId = member.guildId
-        val roleMap = StoreStream.getGuilds().roles[guildId].orEmpty()
+        val roleMap = roles ?: StoreStream.getGuilds().roles[guildId].orEmpty()
 
         member.roles
             .mapNotNull { roleId ->

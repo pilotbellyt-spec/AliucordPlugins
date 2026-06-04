@@ -116,25 +116,29 @@ class ModernUserStyles : Plugin() {
             ensureGuildRolesFetched(gid) {
                 if (sameTag(nameView, user.id, gid, name)) {
                     val fresh = gid?.let { guild -> StoreStream.getGuilds().getMember(guild, user.id) } ?: mem
+                    val role = roleInk.forMember(member ?: fresh, entry.roles)
                     renderUserName(
                         nameView,
                         user.id,
                         name,
                         styleFor(user.id, user),
-                        roleInk.forMember(fresh),
+                        role,
                         gid,
                         true,
+                        lockRoleOnRefresh = true,
                     )
                 }
             }
+            val role = roleInk.forMember(mem, entry.roles)
             renderUserName(
                 nameView,
                 user.id,
                 name,
                 styleFor(user.id, user),
-                roleInk.forMember(mem),
+                role,
                 gid,
                 true,
+                lockRoleOnRefresh = true,
             )
             renderReplyFromEntry(this, entry)
         }
@@ -163,7 +167,7 @@ class ModernUserStyles : Plugin() {
             user.id,
             name,
             styleFor(user.id, user),
-            roleInk.forMember(member ?: guildId?.let { StoreStream.getGuilds().getMember(it, user.id) }),
+            roleInk.forMember(member ?: guildId?.let { StoreStream.getGuilds().getMember(it, user.id) }, replied.roles),
             guildId,
             true,
             fetchAsync = false,
@@ -884,6 +888,7 @@ class ModernUserStyles : Plugin() {
         allowReplacementEffects: Boolean = true,
         preserveReplacementEffectText: Boolean = false,
         keepPlainColor: Boolean = false,
+        lockRoleOnRefresh: Boolean = false,
     ) {
         if (textView != null && fetchAsync) {
             viewOwners[textView] = userId
@@ -892,7 +897,7 @@ class ModernUserStyles : Plugin() {
             ensureProfileFetched(userId, guildId) {
                 if (rowTags[textView] == mark) {
                     val refreshedLabel = if (preserveExistingNameOnRefresh) label else displayNameFor(userId, null)
-                    val refreshedRole = roleFor(userId, guildId) ?: roleGradient
+                    val refreshedRole = if (lockRoleOnRefresh) roleGradient else roleFor(userId, guildId) ?: roleGradient
                     renderUserName(
                         textView,
                         userId,
@@ -906,6 +911,7 @@ class ModernUserStyles : Plugin() {
                         allowReplacementEffects = allowReplacementEffects,
                         preserveReplacementEffectText = preserveReplacementEffectText,
                         keepPlainColor = keepPlainColor,
+                        lockRoleOnRefresh = lockRoleOnRefresh,
                     )
                 }
             }

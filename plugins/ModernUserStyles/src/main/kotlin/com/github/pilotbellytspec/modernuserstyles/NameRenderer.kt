@@ -31,6 +31,7 @@ class NameRenderer(private val context: Context) {
     private val runningAnimations = WeakHashMap<TextView, ValueAnimator>()
     private val animationKeys = WeakHashMap<TextView, String>()
     private val renderTokens = WeakHashMap<TextView, Int>()
+    private val changedFonts = WeakHashMap<TextView, Boolean>()
     private val loadedFonts = mutableMapOf<Int, Typeface?>()
     private val resources = PluginZipResources(context)
 
@@ -76,14 +77,12 @@ class NameRenderer(private val context: Context) {
         textView.paint.isFakeBoldText = false
         textView.paint.textSkewX = 0f
         textView.textScaleX = originalScaleX[textView] ?: 1f
-        val originalLetterSpacing = originalLetterSpacing[textView] ?: 0f
-        textView.letterSpacing = DisplayNameCatalog.letterSpacing(fontId, originalLetterSpacing)
         if (keepPlainColor && colors.isEmpty()) {
             textView.setTextColor(plainColor)
         } else {
             textView.setTextColor(Color.WHITE)
         }
-        textView.typeface = exactTypeface(fontId) ?: DisplayNameCatalog.typeface(fontId, originalTypefaces[textView])
+        setNameFont(textView, fontId)
         if (allowMultiline) {
             textView.setSingleLine(false)
             textView.maxLines = 3
@@ -198,9 +197,7 @@ class NameRenderer(private val context: Context) {
         textView.paint.isFakeBoldText = false
         textView.paint.textSkewX = 0f
         textView.textScaleX = originalScaleX[textView] ?: 1f
-        val originalLetterSpacing = originalLetterSpacing[textView] ?: 0f
-        textView.letterSpacing = DisplayNameCatalog.letterSpacing(fontId, originalLetterSpacing)
-        textView.typeface = exactTypeface(fontId) ?: DisplayNameCatalog.typeface(fontId, originalTypefaces[textView])
+        setNameFont(textView, fontId)
         if (allowMultiline) {
             val h1TextSize = TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_SP,
@@ -271,8 +268,25 @@ class NameRenderer(private val context: Context) {
             textView.setCompoundDrawables(drawables[0], drawables[1], drawables[2], drawables[3])
         }
         originalCompoundDrawablePadding[textView]?.let { textView.compoundDrawablePadding = it }
+        changedFonts.remove(textView)
         textView.setLayerType(View.LAYER_TYPE_NONE, null)
         textView.invalidate()
+    }
+
+    private fun setNameFont(textView: TextView, fontId: Int?) {
+        val originalSpacing = originalLetterSpacing[textView] ?: textView.letterSpacing
+        val changesFont = fontId != null && fontId != DisplayNameCatalog.Font.DEFAULT
+        if (!changesFont) {
+            if (changedFonts.remove(textView) == true) {
+                textView.letterSpacing = originalSpacing
+                originalTypefaces[textView]?.let { textView.typeface = it }
+            }
+            return
+        }
+
+        changedFonts[textView] = true
+        textView.letterSpacing = DisplayNameCatalog.letterSpacing(fontId, originalSpacing)
+        textView.typeface = exactTypeface(fontId) ?: DisplayNameCatalog.typeface(fontId, originalTypefaces[textView])
     }
 
     fun effectForRoleColors(colors: List<Int>): Int =

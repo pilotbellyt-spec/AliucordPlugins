@@ -13,6 +13,7 @@ import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
+import com.aliucord.patcher.before
 import com.discord.api.channel.ChannelUtils
 import com.discord.stores.StoreStream
 import com.discord.utilities.mg_recycler.MGRecyclerDataPayload
@@ -23,6 +24,7 @@ import com.discord.widgets.channels.list.items.ChannelListItemPrivate
 import com.discord.widgets.channels.list.items.ChannelListItemVoiceUser
 import com.discord.widgets.channels.memberlist.adapter.ChannelMembersListAdapter
 import com.discord.widgets.channels.memberlist.adapter.ChannelMembersListViewHolderMember
+import com.discord.widgets.chat.input.autocomplete.Autocompletable
 import com.discord.widgets.chat.input.autocomplete.AutocompleteViewModel
 import com.discord.widgets.chat.input.autocomplete.InputEditTextAction
 import com.discord.widgets.chat.input.autocomplete.UserAutocompletable
@@ -420,6 +422,10 @@ class ModernUserStyles : Plugin() {
         }
 
         val nameId = Utils.getResId("chat_input_item_name", "id")
+        patcher.before<AutocompleteItemViewHolder>("bind", Autocompletable::class.java) {
+            clearAutocompleteName(rootFromBinding(this)?.findViewById(nameId))
+        }
+
         patcher.after<AutocompleteItemViewHolder>("bindUser", UserAutocompletable::class.java) {
             val autocompleteUser = it.args[0] as UserAutocompletable
             val nameView = rootFromBinding(this)?.findViewById<TextView>(nameId)
@@ -450,6 +456,13 @@ class ModernUserStyles : Plugin() {
                 true,
             )
         }
+    }
+
+    private fun clearAutocompleteName(textView: TextView?) {
+        textView ?: return
+        viewOwners.remove(textView)
+        rowTags.remove(textView)
+        nameInk.resetTextView(textView)
     }
 
     private fun dmRows() {

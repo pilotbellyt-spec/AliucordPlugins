@@ -26,21 +26,34 @@ import com.aliucord.patcher.after
 import com.aliucord.utils.RxUtils.subscribe
 import com.discord.app.AppFragment
 import com.discord.databinding.WidgetChatListActionsBinding
+import com.discord.api.message.Message as ApiMessage
+import com.discord.api.premium.PremiumTier
+import com.discord.api.role.GuildRole
+import com.discord.api.utcdatetime.UtcDateTime
+import com.discord.api.user.User as ApiUser
 import com.discord.models.message.Message
+import com.discord.stores.StoreNavigation
 import com.discord.stores.StoreStream
+import com.discord.utilities.channel.ChannelSelector
 import com.discord.utilities.fcm.NotificationClient
 import com.discord.utilities.color.ColorCompat
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapter
+import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemMessage
 import com.discord.widgets.chat.list.actions.WidgetChatListActions
+import com.discord.widgets.chat.list.entries.ChatListEntry
+import com.discord.widgets.chat.list.entries.MessageHeaderEntry
+import com.discord.widgets.chat.list.entries.MessageEntry
 import com.discord.widgets.tabs.NavigationTab
 import com.discord.widgets.user.WidgetUserMentions
 import com.lytefast.flexinput.R
 import org.json.JSONObject
 import rx.functions.Action1
 import rx.functions.Action2
+import java.lang.ref.WeakReference
 import java.util.Calendar
 import java.util.Date
 import java.util.WeakHashMap
+import de.robv.android.xposed.XC_MethodHook
 
 @AliucordPlugin(requiresRestart = false)
 @Suppress("unused")
@@ -67,6 +80,8 @@ class MessageBookmarks : Plugin() {
     private val mentionCycles = WeakHashMap<WidgetUserMentions, Int>()
     private val mentionBackups = WeakHashMap<WidgetUserMentions, WidgetUserMentions.Model>()
     private val seenMessages = mutableMapOf<String, Message>()
+    private val localRows = mutableSetOf<String>()
+    private var bookmarkFragment: WeakReference<WidgetUserMentions>? = null
 
     private val getActionsBinding = WidgetChatListActions::class.java
         .getDeclaredMethod("getBinding")
@@ -86,6 +101,7 @@ class MessageBookmarks : Plugin() {
         watchAppState(context)
         msgMenu(context)
         recentMentions(context)
+        localBookmarkClicks()
         gateway()
         cloudStash.fetch()
         scheduleReminders()
@@ -238,6 +254,8 @@ class MessageBookmarks : Plugin() {
             mentionBackups[this] = mentionsModel
             if (bookmarkTabs[this] == true) {
                 openShelf(this)
+            } else {
+                updateRecentHeader(this, mentionsModel)
             }
         }
     }
@@ -267,15 +285,18 @@ class MessageBookmarks : Plugin() {
         }
     }
 
+    private fun updateRecentHeader(fragment: WidgetUserMentions, model: WidgetUserMentions.Model? = mentionBackups[fragment]) {
+        fragment.setActionBarTitle("Recent Mentions")
+        fragment.setActionBarSubtitle(model?.guildName ?: "All Servers")
+    }
+
     private fun openShelf(fragment: WidgetUserMentions) {
+        bookmarkFragment = WeakReference(fragment)
         val renderVersion = nextRenderVersion(fragment)
         val adapter = mentionsAdapter(fragment) ?: return
-        val messages = stash.all().mapNotNull { bookmark ->
-            seenMessages[bookmark.key]
-                ?: StoreStream.getMessages().getMessage(bookmark.channelId, bookmark.messageId)?.also { message ->
-                    seenMessages[bookmark.key] = message
-                }
-        }
+        val bookmarks = stash.all()
+        val messages = bookmarks.mapNotNull(::cachedMessage)
+        val channels = bookmarkChannelNames(bookmarks)
 
         val loader = WidgetUserMentions.Model.MessageLoader(1000L)
         loader.mentionsLoadingStateSubject.onNext(
@@ -296,15 +317,19 @@ class MessageBookmarks : Plugin() {
             .subscribe {
                 if (bookmarkTabs[fragment] != true || mentionCycles[fragment] != renderVersion) return@subscribe
                 val tabModel = this
+                val rows = bookmarkRows(bookmarks, tabModel.list)
+                val loaded = rows.count {
+                    it is MessageEntry && BookmarkRecord.key(it.message.channelId, it.message.id) in bookmarks.map { saved -> saved.key }
+                }
                 adapter.setData(
                     tabModel.copy(
                         tabModel.userId,
                         tabModel.channelId,
                         tabModel.guild,
                         tabModel.guildId,
-                        tabModel.channelNames,
+                        tabModel.channelNames + channels,
                         tabModel.oldestMessageId,
-                        tabModel.list,
+                        rows,
                         tabModel.myRoleIds,
                         tabModel.newMessagesMarkerMessageId,
                         tabModel.isSpoilerClickAllowed,
@@ -314,9 +339,285 @@ class MessageBookmarks : Plugin() {
                     ),
                 )
                 fragment.setActionBarTitle("Bookmarks")
-                fragment.setActionBarSubtitle(if (messages.isEmpty()) "No loaded bookmarks" else "${messages.size} saved")
+                fragment.setActionBarSubtitle(bookmarkSubtitle(bookmarks.size, loaded))
             }
     }
+
+    private fun bookmarkRows(bookmarks: List<BookmarkRecord>, recentRows: List<ChatListEntry>): List<ChatListEntry> {
+        val keys = bookmarks.map { it.key }.toSet()
+        val rows = recentRows.filterNot { it.javaClass.simpleName == "MentionFooterEntry" || it.javaClass.simpleName == "LoadingEntry" }
+        val shown = rows.mapNotNull {
+            val entry = it as? MessageEntry ?: return@mapNotNull null
+            BookmarkRecord.key(entry.message.channelId, entry.message.id)
+        }.toSet()
+        val missing = bookmarks.filter { it.key !in shown }.flatMap(::fallbackBookmarkRows)
+
+        return (rows + missing).filter {
+            it !is MessageEntry || BookmarkRecord.key(it.message.channelId, it.message.id) in keys
+        }
+    }
+
+    private fun fallbackBookmarkRows(bookmark: BookmarkRecord): List<ChatListEntry> {
+        val entry = bookmarkEntry(bookmark) ?: return emptyList()
+        return listOf(
+            MessageHeaderEntry(entry.message, bookmarkGuildName(bookmark), bookmarkChannelName(bookmark)),
+            entry,
+        )
+    }
+
+    private fun bookmarkEntry(bookmark: BookmarkRecord): MessageEntry? {
+        val message = cachedMessage(bookmark) ?: return null
+        val authorId = message.author?.id ?: bookmark.authorId
+        val names = if (authorId == null) {
+            emptyMap()
+        } else {
+            mapOf(authorId to (bookmark.authorName ?: message.author?.username ?: "Unknown User"))
+        }
+        return MessageEntry(
+            message,
+            null,
+            null,
+            null,
+            emptyMap<Long, GuildRole>(),
+            names,
+            false,
+            false,
+            true,
+            null,
+            null,
+            false,
+            false,
+            false,
+            null,
+            null,
+        )
+    }
+
+    private fun bookmarkChannelNames(bookmarks: List<BookmarkRecord>): Map<Long, String> =
+        bookmarks.mapNotNull { bookmark ->
+            bookmarkChannelName(bookmark)?.let { name -> bookmark.channelId to name }
+        }.toMap()
+
+    private fun bookmarkChannelName(bookmark: BookmarkRecord): String? =
+        runCatching { StoreStream.getChannels().getChannel(bookmark.channelId)?.p() }.getOrNull()
+            ?: bookmark.channelName
+            ?: bookmark.authorName?.let { "@$it" }
+
+    private fun bookmarkGuildName(bookmark: BookmarkRecord): String? =
+        bookmark.guildId?.let { guildId ->
+            runCatching {
+                val guild = StoreStream.getGuilds().getGuild(guildId) ?: return@runCatching null
+                guild.javaClass.getDeclaredMethod("getName").invoke(guild) as? String
+            }.getOrNull()
+        }
+
+    private fun cachedMessage(bookmark: BookmarkRecord): Message? =
+        StoreStream.getMessages().getMessage(bookmark.channelId, bookmark.messageId)?.also { message ->
+                localRows.remove(bookmark.key)
+                seenMessages[bookmark.key] = message
+            }
+            ?: seenMessages[bookmark.key]
+            ?: localMessage(bookmark)?.also { message ->
+                localRows.add(bookmark.key)
+                seenMessages[bookmark.key] = message
+            }
+
+    private fun localBookmarkClicks() {
+        patcher.patch(
+            Class.forName("com.discord.widgets.user.WidgetUserMentions\$UserMentionsAdapterEventHandler")
+                .getDeclaredMethod("onMessageClicked", Message::class.java, Boolean::class.javaPrimitiveType),
+            object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val message = param.args[0] as? Message ?: return
+                    val key = BookmarkRecord.key(message.channelId, message.id)
+                    if (key !in localRows) return
+
+                    openBookmarkMessage(message.channelId, message.id)
+                    param.result = null
+                }
+            },
+        )
+
+        patcher.after<WidgetChatListAdapterItemMessage>(
+            "onConfigure",
+            Int::class.java,
+            ChatListEntry::class.java,
+        ) {
+            val entry = it.args[1] as? MessageEntry ?: return@after
+            val message = entry.message
+            val key = BookmarkRecord.key(message.channelId, message.id)
+            if (key !in localRows) return@after
+
+            itemView.setOnClickListener {
+                openBookmarkMessage(message.channelId, message.id)
+            }
+        }
+    }
+
+    private fun openBookmarkMessage(channelId: Long, messageId: Long) {
+        runCatching { selectBookmarkChannel(channelId) }
+        closeBookmarksPage()
+        closeHomePanel()
+        jumpAfter(channelId, messageId, 0)
+        Utils.mainThread.postDelayed({
+            if (running) {
+                closeBookmarksPage()
+                closeHomePanel()
+                StoreStream.getMessagesLoader().jumpToMessage(channelId, messageId)
+            }
+        }, 450)
+        jumpAfter(channelId, messageId, 1400)
+        jumpAfter(channelId, messageId, 2800)
+    }
+
+    private fun closeBookmarksPage() {
+        val fragment = bookmarkFragment?.get() ?: return
+        if (bookmarkTabs[fragment] != true) return
+        bookmarkTabs[fragment] = false
+        updateRecentHeader(fragment)
+        Utils.mainThread.post {
+            runCatching {
+                val field = listOf("dismissViewModel", "dismissViewModel\$delegate")
+                    .firstNotNullOfOrNull { name ->
+                        runCatching {
+                            WidgetUserMentions::class.java.getDeclaredField(name).apply { isAccessible = true }
+                        }.getOrNull()
+                    } ?: return@runCatching
+                val lazy = field.get(fragment)
+                val model = lazy.javaClass.getDeclaredMethod("getValue").invoke(lazy)
+                model.javaClass.getDeclaredMethod("dismiss").invoke(model)
+            }
+
+            Utils.mainThread.postDelayed({
+                if (fragment.isAdded && fragment.isResumed && fragment.view != null) {
+                    runCatching { fragment.requireActivity().onBackPressed() }
+                }
+            }, 150)
+        }
+    }
+
+    private fun selectBookmarkChannel(channelId: Long) {
+        val channel = StoreStream.getChannels().getChannel(channelId)
+        if (channel == null) {
+            ChannelSelector.getInstance().findAndSetThread(appContext, channelId)
+        } else {
+            ChannelSelector.getInstance().selectChannel(channel, null, null)
+        }
+    }
+
+    private fun jumpAfter(channelId: Long, messageId: Long, delay: Long) {
+        val jump = {
+            if (running) {
+                closeHomePanel()
+                StoreStream.getMessagesLoader().jumpToMessage(channelId, messageId)
+            }
+        }
+        if (delay == 0L) {
+            jump()
+        } else {
+            Utils.mainThread.postDelayed(jump, delay)
+        }
+    }
+
+    private fun closeHomePanel() {
+        runCatching {
+            val stream = StoreStream::class.java.getDeclaredField("INSTANCE").get(null)
+            val navigation = stream.javaClass.getDeclaredMethod("getNavigation").invoke(stream)
+            navigation.javaClass
+                .getDeclaredMethod("setNavigationPanelAction", StoreNavigation.PanelAction::class.java)
+                .invoke(navigation, StoreNavigation.PanelAction.CLOSE)
+        }
+        runCatching {
+            val stream = StoreStream::class.java.getDeclaredField("INSTANCE").get(null)
+            val tabs = stream.javaClass.getDeclaredMethod("getTabsNavigation").invoke(stream)
+            tabs.javaClass
+                .getDeclaredMethod(
+                    "selectHomeTab",
+                    StoreNavigation.PanelAction::class.java,
+                    Boolean::class.javaPrimitiveType,
+                )
+                .invoke(tabs, StoreNavigation.PanelAction.CLOSE, true)
+        }
+    }
+
+    private fun localMessage(bookmark: BookmarkRecord): Message? =
+        runCatching {
+            val raw = ApiMessage(
+                bookmark.messageId,
+                bookmark.channelId,
+                localAuthor(bookmark),
+                bookmark.content ?: "",
+                UtcDateTime(bookmark.savedAt),
+                null,
+                false,
+                false,
+                emptyList<Any?>(),
+                emptyList<Any?>(),
+                emptyList<Any?>(),
+                emptyList<Any?>(),
+                emptyList<Any?>(),
+                null,
+                false,
+                null,
+                0,
+                null,
+                null,
+                null,
+                null,
+                null,
+                emptyList<Any?>(),
+                emptyList<Any?>(),
+                null,
+                null,
+                null,
+                emptyList<Any?>(),
+                null,
+                bookmark.guildId,
+                null,
+                false,
+                null,
+                0,
+                0,
+            )
+            Message(raw)
+        }.getOrNull()
+
+    private fun localAuthor(bookmark: BookmarkRecord): ApiUser? =
+        bookmark.authorId?.let { authorId ->
+            ApiUser(
+                authorId,
+                bookmark.authorName ?: StoreStream.getUsers().users[authorId]?.username ?: "Unknown User",
+                null,
+                null,
+                "0000",
+                null,
+                null,
+                false,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                PremiumTier.NONE,
+                null,
+                null,
+                null,
+                null,
+                0,
+            )
+        }
+
+    private fun bookmarkSubtitle(total: Int, loaded: Int): String =
+        when {
+            total == 0 -> "No bookmarks"
+            loaded == total -> "$loaded saved"
+            loaded == 0 -> "No loaded bookmarks"
+            else -> "$loaded/$total loaded"
+        }
 
     private fun mentionsAdapter(fragment: WidgetUserMentions): WidgetChatListAdapter? =
         runCatching {
@@ -417,7 +718,7 @@ class MessageBookmarks : Plugin() {
                     .setBody(bookmark.content ?: "Tap to jump to the saved message.")
                     .setAutoDismissPeriodSecs(10)
                     .setOnClick {
-                        StoreStream.getMessagesLoader().jumpToMessage(bookmark.channelId, bookmark.messageId)
+                        openBookmarkMessage(bookmark.channelId, bookmark.messageId)
                     },
                 bookmark.channelId,
             )
@@ -469,7 +770,7 @@ class MessageBookmarks : Plugin() {
         if (channelId == 0L || messageId == 0L) return
 
         Utils.mainThread.postDelayed({
-            if (running) StoreStream.getMessagesLoader().jumpToMessage(channelId, messageId)
+            if (running) openBookmarkMessage(channelId, messageId)
         }, 750)
     }
 

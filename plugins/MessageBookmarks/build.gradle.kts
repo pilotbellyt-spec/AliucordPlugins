@@ -1,9 +1,12 @@
-version = "0.0.2"
+version = "0.0.3"
 description = "Message bookmarks and reminders"
 
 aliucord {
     changelog.set(
         """
+        # 0.0.3
+        * Show saved messages with Recent Mentions style channel headers and reply previews.
+
         # 0.0.1
         * Add local message bookmarks and reminders.
         * Add opt-in sync mode for Discord's saved-message API.

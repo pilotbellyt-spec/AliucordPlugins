@@ -13,7 +13,6 @@ import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
-import com.aliucord.patcher.before
 import com.discord.api.channel.ChannelUtils
 import com.discord.stores.StoreStream
 import com.discord.utilities.mg_recycler.MGRecyclerDataPayload
@@ -35,6 +34,9 @@ import com.discord.widgets.chat.list.entries.ChatListEntry
 import com.discord.widgets.chat.list.entries.MessageEntry
 import com.discord.widgets.chat.managereactions.ManageReactionsResultsAdapter
 import com.discord.widgets.settings.account.WidgetSettingsAccount
+import com.discord.widgets.tabs.NavigationTab
+import com.discord.widgets.tabs.OnTabSelectedListener
+import com.discord.widgets.tabs.WidgetTabsHost
 import com.discord.widgets.user.profile.UserProfileHeaderView
 import com.discord.widgets.user.profile.UserProfileHeaderViewModel
 import com.discord.widgets.voice.fullscreen.stage.AudienceViewHolder
@@ -81,6 +83,7 @@ class ModernUserStyles : Plugin() {
         dmRows()
         dmHeader()
         toolbarTitle()
+        tabTitles()
         voiceRows()
         reactionSheet()
         accountSettings()
@@ -540,6 +543,19 @@ class ModernUserStyles : Plugin() {
         ) {
             val toolbarLabel = (it.args[0] as? CharSequence)?.toString()
             styleCurrentPrivateRecipient(title, toolbarLabel, resetWhenNotMatched = true)
+        }
+    }
+
+    private fun tabTitles() {
+        patcher.after<WidgetTabsHost>("navigateToTab", NavigationTab::class.java) {
+            val tab = it.args[0] as? NavigationTab ?: return@after
+            val listeners = grab("tabToTabSelectionListenerMap") as? Map<*, *> ?: return@after
+            val listener = listeners[tab] as? OnTabSelectedListener ?: return@after
+            actionBarTitleLayout?.setSubtitle(null)
+            view?.post {
+                actionBarTitleLayout?.setSubtitle(null)
+                listener.onTabSelected()
+            }
         }
     }
 

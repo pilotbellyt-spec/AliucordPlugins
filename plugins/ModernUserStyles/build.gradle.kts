@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.46"
+version = "0.0.47"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,9 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.47
+        * Refresh tab toolbar ownership and clear stale subtitles during tab switches.
+
         # 0.0.46
         * Stop stale display-name font styles from sticking to recycled message rows.
 

@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.49"
+version = "0.0.50"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,9 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.50
+        * Keep font-styled chat names from wiping or leaking role gradients on recycled message rows.
+
         # 0.0.49
         * Keep selected DM sidebar name effects aligned with normal Discord rows.
 

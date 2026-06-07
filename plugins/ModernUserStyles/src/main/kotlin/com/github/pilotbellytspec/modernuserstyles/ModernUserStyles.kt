@@ -99,6 +99,15 @@ class ModernUserStyles : Plugin() {
     private fun chatRows() {
         val nameId = Utils.getResId("chat_list_adapter_item_text_name", "id")
 
+        patcher.before<WidgetChatListAdapterItemMessage>(
+            "onConfigure",
+            Int::class.java,
+            ChatListEntry::class.java,
+        ) {
+            if (!settings.getBool("chatNames", true)) return@before
+            clearBoundName(itemView.findViewById(nameId))
+        }
+
         patcher.after<WidgetChatListAdapterItemMessage>(
             "onConfigure",
             Int::class.java,
@@ -459,6 +468,10 @@ class ModernUserStyles : Plugin() {
     }
 
     private fun clearAutocompleteName(textView: TextView?) {
+        clearBoundName(textView)
+    }
+
+    private fun clearBoundName(textView: TextView?) {
         textView ?: return
         viewOwners.remove(textView)
         rowTags.remove(textView)
@@ -930,7 +943,12 @@ class ModernUserStyles : Plugin() {
             ensureProfileFetched(userId, guildId) {
                 if (rowTags[textView] == mark) {
                     val refreshedLabel = if (preserveExistingNameOnRefresh) label else displayNameFor(userId, null)
-                    val refreshedRole = if (lockRoleOnRefresh) roleGradient else roleFor(userId, guildId) ?: roleGradient
+                    val currentRole = roleFor(userId, guildId)
+                    val refreshedRole = if (lockRoleOnRefresh && currentRole == null) {
+                        roleGradient
+                    } else {
+                        currentRole ?: roleGradient
+                    }
                     renderUserName(
                         textView,
                         userId,

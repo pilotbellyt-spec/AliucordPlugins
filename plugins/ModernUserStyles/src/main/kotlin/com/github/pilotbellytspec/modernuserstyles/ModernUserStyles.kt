@@ -509,6 +509,7 @@ class ModernUserStyles : Plugin() {
                 styleFor(recipient.id, storeUser ?: recipient),
                 null,
                 preserveExistingNameOnRefresh = true,
+                compact = true,
             )
         }
     }
@@ -668,6 +669,7 @@ class ModernUserStyles : Plugin() {
         guildId: Long? = null,
         preserveExistingNameOnRefresh: Boolean = false,
         allowMultiline: Boolean = false,
+        compact: Boolean = false,
     ) {
         val mark = tag(userId, guildId, label)
         if (textView != null) {
@@ -684,6 +686,7 @@ class ModernUserStyles : Plugin() {
             settings.getBool("roleGradients", true),
             allowDisplayStyleColors = true,
             allowMultiline = allowMultiline,
+            compact = compact,
         )
         if (textView != null) {
             ensureProfileFetched(userId, guildId) {
@@ -698,6 +701,7 @@ class ModernUserStyles : Plugin() {
                         settings.getBool("roleGradients", true),
                         allowDisplayStyleColors = true,
                         allowMultiline = allowMultiline,
+                        compact = compact,
                     )
                 }
             }

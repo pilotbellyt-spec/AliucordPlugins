@@ -162,6 +162,7 @@ class NameRenderer(private val context: Context) {
         allowRoleGradient: Boolean,
         allowDisplayStyleColors: Boolean = false,
         allowMultiline: Boolean = false,
+        compact: Boolean = false,
     ) {
         if (textView == null) return
 
@@ -219,7 +220,7 @@ class NameRenderer(private val context: Context) {
             textView.ellipsize = null
         }
 
-        val drawable = ProfileNameDrawable(textView, nextLabel, colors, effectId)
+        val drawable = ProfileNameDrawable(textView, nextLabel, colors, effectId, compact)
         textView.text = ""
         textView.contentDescription = nextLabel
         textView.compoundDrawablePadding = 0
@@ -557,6 +558,7 @@ class NameRenderer(private val context: Context) {
         private val label: String,
         colors: List<Int>,
         private val effectId: Int,
+        private val compact: Boolean,
     ) : Drawable() {
         private val paint = TextPaint(textView.paint).apply {
             isAntiAlias = true
@@ -576,16 +578,24 @@ class NameRenderer(private val context: Context) {
             }
 
         init {
-            val width = (textWidth + inset * 2f).toInt().coerceAtLeast(1)
-            val height = (textHeight + inset * 2f).toInt().coerceAtLeast(textView.lineHeight)
+            val width = (textWidth + if (compact) inset else inset * 2f).toInt().coerceAtLeast(1)
+            val height = if (compact) {
+                textView.lineHeight.coerceAtLeast(1)
+            } else {
+                (textHeight + inset * 2f).toInt().coerceAtLeast(textView.lineHeight)
+            }
             setBounds(0, 0, width, height)
         }
 
         override fun draw(canvas: Canvas) {
             span.animationProgress = animationProgress
             val bounds = bounds
-            val x = bounds.left + inset
-            val baseline = bounds.top + inset - fontMetrics.ascent
+            val x = bounds.left + if (compact) 0f else inset
+            val baseline = if (compact) {
+                bounds.top + (bounds.height() - fontMetrics.descent - fontMetrics.ascent) / 2f
+            } else {
+                bounds.top + inset - fontMetrics.ascent
+            }
             span.draw(
                 canvas,
                 label,

@@ -10,6 +10,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.MenuItem
 import android.view.View
+import androidx.appcompat.widget.Toolbar
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import android.widget.LinearLayout
@@ -227,26 +228,16 @@ class MessageBookmarks : Plugin() {
             if (!settings.getBool("showBookmarksButton", true)) return@after
             if (it.args[0] != mentionsMenuId) return@after
 
-            val toolbarView = it.result as? androidx.appcompat.widget.Toolbar ?: return@after
-            if (toolbarView.menu.findItem(menuBookmarksId) != null) return@after
+            val bar = it.result as? Toolbar ?: return@after
+            addBookmarksButton(this, context, bar)
+        }
 
-            val star = toolbarView.menu.add(0, menuBookmarksId, 0, "Bookmarks")
-            star.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-            ContextCompat.getDrawable(context, R.e.ic_star_24dp)?.mutate()?.let { icon ->
-                icon.setTint(ColorCompat.getThemedColor(toolbarView.context, R.b.colorInteractiveNormal))
-                star.icon = icon
-            }
-            star.setOnMenuItemClickListener {
-                val isBookmarks = bookmarkTabs[this] == true
-                bookmarkTabs[this] = !isBookmarks
-                nextRenderVersion(this)
-                if (isBookmarks) {
-                    restoreRecentMentions(this)
-                } else {
-                    openShelf(this)
-                }
-                true
-            }
+        patcher.after<WidgetUserMentions>("configureToolbar", String::class.java) {
+            addBookmarksButton(this, context)
+        }
+
+        patcher.after<WidgetUserMentions>("onTabSelected") {
+            if (bookmarkTabs[this] == true) openShelf(this)
         }
 
         patcher.after<WidgetUserMentions>("configureUI", WidgetUserMentions.Model::class.java) {
@@ -254,8 +245,6 @@ class MessageBookmarks : Plugin() {
             mentionBackups[this] = mentionsModel
             if (bookmarkTabs[this] == true) {
                 openShelf(this)
-            } else {
-                updateRecentHeader(this, mentionsModel)
             }
         }
     }
@@ -276,19 +265,42 @@ class MessageBookmarks : Plugin() {
                     .invoke(fragment, recentModel)
             } catch (_: Throwable) {
                 mentionsAdapter(fragment)?.setData(recentModel)
-                fragment.setActionBarSubtitle(recentModel.guildName ?: "All Servers")
             }
-            fragment.setActionBarTitle("Recent Mentions")
-        } else {
-            fragment.setActionBarTitle("Recent Mentions")
-            fragment.setActionBarSubtitle("All Servers")
         }
     }
 
-    private fun updateRecentHeader(fragment: WidgetUserMentions, model: WidgetUserMentions.Model? = mentionBackups[fragment]) {
-        fragment.setActionBarTitle("Recent Mentions")
-        fragment.setActionBarSubtitle(model?.guildName ?: "All Servers")
+    private fun addBookmarksButton(fragment: WidgetUserMentions, context: Context) {
+        if (!settings.getBool("showBookmarksButton", true)) return
+        val bar = mentionsToolbar(fragment) ?: return
+        addBookmarksButton(fragment, context, bar)
     }
+
+    private fun addBookmarksButton(fragment: WidgetUserMentions, context: Context, bar: Toolbar) {
+        if (bar.menu.findItem(menuBookmarksId) != null) return
+
+        val item = bar.menu.add(0, menuBookmarksId, 0, "Bookmarks")
+        item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+        ContextCompat.getDrawable(context, R.e.ic_star_24dp)?.mutate()?.let { icon ->
+            icon.setTint(ColorCompat.getThemedColor(bar.context, R.b.colorInteractiveNormal))
+            item.icon = icon
+        }
+        item.setOnMenuItemClickListener {
+            val isBookmarks = bookmarkTabs[fragment] == true
+            bookmarkTabs[fragment] = !isBookmarks
+            nextRenderVersion(fragment)
+            if (isBookmarks) {
+                restoreRecentMentions(fragment)
+            } else {
+                openShelf(fragment)
+            }
+            true
+        }
+    }
+
+    private fun mentionsToolbar(fragment: WidgetUserMentions): Toolbar? =
+        runCatching {
+            fragment.requireActivity().findViewById<Toolbar>(Utils.getResId("action_bar_toolbar", "id"))
+        }.getOrNull()
 
     private fun openShelf(fragment: WidgetUserMentions) {
         bookmarkFragment = WeakReference(fragment)
@@ -338,8 +350,6 @@ class MessageBookmarks : Plugin() {
                         tabModel.selectedTab,
                     ),
                 )
-                fragment.setActionBarTitle("Bookmarks")
-                fragment.setActionBarSubtitle(bookmarkSubtitle(bookmarks.size, loaded))
             }
     }
 
@@ -474,7 +484,6 @@ class MessageBookmarks : Plugin() {
         val fragment = bookmarkFragment?.get() ?: return
         if (bookmarkTabs[fragment] != true) return
         bookmarkTabs[fragment] = false
-        updateRecentHeader(fragment)
         Utils.mainThread.post {
             runCatching {
                 val field = listOf("dismissViewModel", "dismissViewModel\$delegate")
@@ -609,14 +618,6 @@ class MessageBookmarks : Plugin() {
                 null,
                 0,
             )
-        }
-
-    private fun bookmarkSubtitle(total: Int, loaded: Int): String =
-        when {
-            total == 0 -> "No bookmarks"
-            loaded == total -> "$loaded saved"
-            loaded == 0 -> "No loaded bookmarks"
-            else -> "$loaded/$total loaded"
         }
 
     private fun mentionsAdapter(fragment: WidgetUserMentions): WidgetChatListAdapter? =

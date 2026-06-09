@@ -14,7 +14,6 @@ import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
 import com.aliucord.patcher.before
-import com.discord.api.channel.ChannelUtils
 import com.discord.stores.StoreStream
 import com.discord.utilities.mg_recycler.MGRecyclerDataPayload
 import com.discord.utilities.textprocessing.node.UserMentionNode
@@ -36,9 +35,6 @@ import com.discord.widgets.chat.list.entries.ChatListEntry
 import com.discord.widgets.chat.list.entries.MessageEntry
 import com.discord.widgets.chat.managereactions.ManageReactionsResultsAdapter
 import com.discord.widgets.settings.account.WidgetSettingsAccount
-import com.discord.widgets.tabs.NavigationTab
-import com.discord.widgets.tabs.OnTabSelectedListener
-import com.discord.widgets.tabs.WidgetTabsHost
 import com.discord.widgets.user.profile.UserProfileHeaderView
 import com.discord.widgets.user.profile.UserProfileHeaderViewModel
 import com.discord.widgets.voice.fullscreen.stage.AudienceViewHolder
@@ -85,7 +81,6 @@ class ModernUserStyles : Plugin() {
         dmRows()
         dmHeader()
         toolbarTitle()
-        tabTitles()
         voiceRows()
         reactionSheet()
         accountSettings()
@@ -568,53 +563,32 @@ class ModernUserStyles : Plugin() {
             Int::class.javaObjectType,
             Int::class.javaObjectType,
         ) {
-            val toolbarLabel = (it.args[0] as? CharSequence)?.toString()
-            styleCurrentPrivateRecipient(title, toolbarLabel, resetWhenNotMatched = true)
-        }
-    }
-
-    private fun tabTitles() {
-        patcher.after<WidgetTabsHost>("navigateToTab", NavigationTab::class.java) {
-            val tab = it.args[0] as? NavigationTab ?: return@after
-            val listeners = grab("tabToTabSelectionListenerMap") as? Map<*, *> ?: return@after
-            val listener = listeners[tab] as? OnTabSelectedListener ?: return@after
-            actionBarTitleLayout?.setSubtitle(null)
-            view?.post {
-                actionBarTitleLayout?.setSubtitle(null)
-                listener.onTabSelected()
-            }
+            styleCurrentPrivateRecipient(title, resetWhenNotMatched = true, keepTitleText = true)
         }
     }
 
     private fun styleCurrentPrivateRecipient(
         textView: TextView?,
-        expectedLabel: String? = null,
         allowMultiline: Boolean = false,
         resetWhenNotMatched: Boolean = false,
+        keepTitleText: Boolean = false,
     ) {
         if (textView == null) return
         val channel = runCatching { StoreStream.getChannelsSelected().selectedChannel }.getOrNull()
-        val expectedName = expectedLabel.cleanName()
         if (channel == null) {
-            if (resetWhenNotMatched && ownsNameText(textView)) resetNameText(textView, expectedName)
-            return
-        }
-        if (!ChannelUtils.B(channel)) {
-            if (resetWhenNotMatched && ownsNameText(textView)) {
-                resetNameText(textView, expectedName ?: ChannelUtils.c(channel).cleanName())
-            }
+            if (resetWhenNotMatched) resetNameText(textView, null)
             return
         }
         val recipients = runCatching { channel.z() }.getOrNull()
         if (recipients.isNullOrEmpty()) {
-            if (resetWhenNotMatched) resetNameText(textView, expectedName ?: channel.readString("name", "getName"))
+            if (resetWhenNotMatched) resetNameText(textView, if (keepTitleText) null else channel.readString("name", "getName"))
             return
         }
         val meId = StoreStream.getUsers().me.id
         val recipient = recipients.firstOrNull { user -> user.id != meId } ?: recipients.firstOrNull() ?: return
         val channelName = channel.readString("name", "getName").cleanName()
         if (recipients.size != 1) {
-            if (resetWhenNotMatched) resetNameText(textView, expectedName ?: channelName)
+            if (resetWhenNotMatched) resetNameText(textView, if (keepTitleText) null else channelName)
             return
         }
 
@@ -622,14 +596,6 @@ class ModernUserStyles : Plugin() {
         val displayName = displayNameFor(recipient.id, recipient)
         val username = usernameFor(recipient.id, recipient)
         val wantedName = displayName ?: username
-        if (expectedName != null &&
-            expectedName != displayName.cleanName() &&
-            expectedName != username.cleanName() &&
-            expectedName != channelName
-        ) {
-            if (resetWhenNotMatched) resetNameText(textView, expectedName)
-            return
-        }
         if (viewOwners[textView] != null && viewOwners[textView] != recipient.id) {
             resetNameText(textView, wantedName)
         }
@@ -641,7 +607,7 @@ class ModernUserStyles : Plugin() {
             currentText == username.cleanName() ||
             currentText == channelName
         if (!matchesRecipient) {
-            if (resetWhenNotMatched) resetNameText(textView, wantedName)
+            if (resetWhenNotMatched) resetNameText(textView, if (keepTitleText) null else wantedName)
             return
         }
 
@@ -663,9 +629,6 @@ class ModernUserStyles : Plugin() {
         nameInk.resetTextView(textView)
         fallback?.let { textView.text = it }
     }
-
-    private fun ownsNameText(textView: TextView): Boolean =
-        viewOwners.containsKey(textView) || rowTags.containsKey(textView)
 
     private fun isSelectedPrivateChannel(): Boolean {
         val channel = runCatching { StoreStream.getChannelsSelected().selectedChannel }.getOrNull() ?: return false

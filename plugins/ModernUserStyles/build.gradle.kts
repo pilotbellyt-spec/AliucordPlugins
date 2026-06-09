@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.50"
+version = "0.0.52"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,12 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.52
+        * Stop DM toolbar name effects from leaking selected channel or DM names into other pages.
+
+        # 0.0.51
+        * Keep the bookmarks/title-mode fix separate and stable while preserving display-name role styling behavior.
+
         # 0.0.50
         * Keep font-styled chat names from wiping or leaking role gradients on recycled message rows.
 

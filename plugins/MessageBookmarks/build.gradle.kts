@@ -1,9 +1,12 @@
-version = "0.0.3"
+version = "0.0.4"
 description = "Message bookmarks and reminders"
 
 aliucord {
     changelog.set(
         """
+        # 0.0.4
+        * Keep the Bookmarks view from taking over Discord's shared titlebar.
+
         # 0.0.3
         * Show saved messages with Recent Mentions style channel headers and reply previews.
 

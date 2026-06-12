@@ -12,6 +12,7 @@ A small set of Aliucord plugins for Discord Android `126.21` / `126021`.
 | IgnoreFeature | Adds Ignore/Unignore to user profiles and hides ignored users in chat. |
 | ServerSettingsFix | Fixes a few broken server settings screens on Aliucord. |
 | JumpToTop | Adds a jump-to-top button inside forum posts. |
+| ManageStickers | Adds sticker management to server settings. |
 
 ## Build
 
@@ -30,6 +31,7 @@ Build one plugin:
 .\gradlew.bat --no-configuration-cache :plugins:IgnoreFeature:make
 .\gradlew.bat --no-configuration-cache :plugins:ServerSettingsFix:make
 .\gradlew.bat --no-configuration-cache :plugins:JumpToTop:make
+.\gradlew.bat --no-configuration-cache :plugins:ManageStickers:make
 ```
 
 The zip for each plugin ends up in that plugin's `build/outputs` folder.
@@ -43,6 +45,7 @@ The zip for each plugin ends up in that plugin's `build/outputs` folder.
 .\gradlew.bat --no-configuration-cache :plugins:IgnoreFeature:deployWithAdb
 .\gradlew.bat --no-configuration-cache :plugins:ServerSettingsFix:deployWithAdb
 .\gradlew.bat --no-configuration-cache :plugins:JumpToTop:deployWithAdb
+.\gradlew.bat --no-configuration-cache :plugins:ManageStickers:deployWithAdb
 ```
 
 ## GitHub Actions

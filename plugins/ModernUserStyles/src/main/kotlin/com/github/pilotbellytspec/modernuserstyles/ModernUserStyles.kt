@@ -524,12 +524,21 @@ class ModernUserStyles : Plugin() {
 
     private fun resetSidebarName(textView: TextView?, label: String?) {
         if (textView == null) return
+        val visible = textView.text?.toString().cleanName()
         val color = textView.textColors
+        val typeface = textView.typeface
+        val textSize = textView.textSize
+        val scale = textView.textScaleX
+        val spacing = textView.letterSpacing
         viewOwners.remove(textView)
         rowTags.remove(textView)
         nameInk.resetTextView(textView)
         textView.setTextColor(color)
-        textView.text = label.cleanName() ?: textView.contentDescription
+        textView.typeface = typeface
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSize)
+        textView.textScaleX = scale
+        textView.letterSpacing = spacing
+        textView.text = visible ?: label.cleanName() ?: textView.contentDescription
     }
 
     private fun dmHeader() {

@@ -477,6 +477,15 @@ class ModernUserStyles : Plugin() {
         if (!settings.getBool("dmList", true)) return
 
         val nameId = Utils.getResId("channels_list_item_private_name", "id")
+
+        patcher.before<WidgetChannelsListAdapter.ItemChannelPrivate>(
+            "onConfigure",
+            Int::class.java,
+            ChannelListItem::class.java,
+        ) {
+            clearBoundName(itemView.findViewById<TextView>(nameId))
+        }
+
         patcher.after<WidgetChannelsListAdapter.ItemChannelPrivate>(
             "onConfigure",
             Int::class.java,
@@ -486,10 +495,7 @@ class ModernUserStyles : Plugin() {
             val nameView = itemView.findViewById<TextView>(nameId)
             val meId = StoreStream.getUsers().me.id
             val recipients = dmRow.channel.z().filter { user -> user.id != meId }
-            if (recipients.size != 1) {
-                resetSidebarName(nameView, dmRow.channel.readString("name", "getName"))
-                return@after
-            }
+            if (recipients.size != 1) return@after
             val recipient = recipients.first()
             val storeUser = StoreStream.getUsers().users[recipient.id]
             val label = displayNameFor(recipient.id, recipient) ?: usernameFor(recipient.id, recipient)

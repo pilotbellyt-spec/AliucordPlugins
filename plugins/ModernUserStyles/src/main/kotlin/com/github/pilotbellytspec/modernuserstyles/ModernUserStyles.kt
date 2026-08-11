@@ -487,7 +487,7 @@ class ModernUserStyles : Plugin() {
             val meId = StoreStream.getUsers().me.id
             val recipients = dmRow.channel.z().filter { user -> user.id != meId }
             if (recipients.size != 1) {
-                resetSidebarName(nameView, dmRow.channel.readString("name", "getName"))
+                resetNameText(nameView, dmRow.channel.readString("name", "getName"))
                 return@after
             }
             val recipient = recipients.first()

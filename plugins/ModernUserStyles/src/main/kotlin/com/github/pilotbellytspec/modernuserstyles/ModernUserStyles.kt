@@ -487,7 +487,7 @@ class ModernUserStyles : Plugin() {
             val meId = StoreStream.getUsers().me.id
             val recipients = dmRow.channel.z().filter { user -> user.id != meId }
             if (recipients.size != 1) {
-                resetNameText(nameView, dmRow.channel.readString("name", "getName"))
+                resetSidebarName(nameView, dmRow.channel.readString("name", "getName"))
                 return@after
             }
             val recipient = recipients.first()
@@ -524,20 +524,12 @@ class ModernUserStyles : Plugin() {
 
     private fun resetSidebarName(textView: TextView?, label: String?) {
         if (textView == null) return
-        val visible = textView.text?.toString().cleanName()
         val color = textView.textColors
-        val typeface = textView.typeface
-        val textSize = textView.textSize
-        val scale = textView.textScaleX
-        val spacing = textView.letterSpacing
         viewOwners.remove(textView)
+        rowTags.remove(textView)
         nameInk.resetTextView(textView)
         textView.setTextColor(color)
-        textView.typeface = typeface
-        textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSize)
-        textView.textScaleX = scale
-        textView.letterSpacing = spacing
-        textView.text = visible ?: label.cleanName() ?: textView.contentDescription
+        textView.text = label.cleanName() ?: textView.contentDescription
     }
 
     private fun dmHeader() {

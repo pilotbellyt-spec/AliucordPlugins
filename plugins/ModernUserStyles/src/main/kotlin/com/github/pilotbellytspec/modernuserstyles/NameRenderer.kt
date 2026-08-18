@@ -578,7 +578,7 @@ class NameRenderer(private val context: Context) {
             }
 
         init {
-            val width = (textWidth + if (compact) inset else inset * 2f).toInt().coerceAtLeast(1)
+            val width = (textWidth + if (compact) 0f else inset * 2f).toInt().coerceAtLeast(1)
             val height = if (compact) {
                 textView.lineHeight.coerceAtLeast(1)
             } else {

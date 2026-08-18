@@ -2,7 +2,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-version = "0.0.52"
+version = "0.0.53"
 description = "Gradient roles and custom display names from DiscordRN"
 
 fun appendModernUserStyleResources() {
@@ -48,6 +48,10 @@ tasks.named("make") {
 aliucord {
     changelog.set(
         """
+        # 0.0.53
+        * Clear recycled DM sidebar styles before Discord binds the next row, preventing effects from leaking into group DMs.
+        * Remove extra width from compact DM name effect drawables.
+
         # 0.0.52
         * Stop DM toolbar name effects from leaking selected channel or DM names into other pages.
 
